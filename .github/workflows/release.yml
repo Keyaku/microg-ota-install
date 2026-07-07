@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0   # full history + tags so `git describe` resolves pkgver
 
@@ -34,7 +34,7 @@ jobs:
           echo "mgver=$mgver"   >> "$GITHUB_OUTPUT"
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: microg-ota-${{ steps.ver.outputs.pkgver }}
           path: releases/*.zip
