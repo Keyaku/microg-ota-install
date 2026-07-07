@@ -50,7 +50,7 @@ jobs:
           # alone and just (re)attach the assets. Idempotent either way.
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
             gh release create "$GITHUB_REF_NAME" \
-              --title "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME — microG v${{ steps.ver.outputs.mgver }}" \
               --notes "microG OTA package \`${{ steps.ver.outputs.pkgver }}\` — bundles microG GmsCore \`${{ steps.ver.outputs.mgver }}\`."
           gh release upload "$GITHUB_REF_NAME" --clobber \
             releases/microg-ota-product-*.zip \
