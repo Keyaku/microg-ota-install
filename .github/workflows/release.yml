@@ -45,9 +45,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --notes "microG OTA package \`${{ steps.ver.outputs.pkgver }}\` — bundles microG GmsCore \`${{ steps.ver.outputs.mgver }}\`." \
+          # Create the release if it does not exist yet (e.g. a plain tag push);
+          # if it was already created (e.g. via the web UI), leave its notes
+          # alone and just (re)attach the assets. Idempotent either way.
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --notes "microG OTA package \`${{ steps.ver.outputs.pkgver }}\` — bundles microG GmsCore \`${{ steps.ver.outputs.mgver }}\`."
+          gh release upload "$GITHUB_REF_NAME" --clobber \
             releases/microg-ota-product-*.zip \
             releases/microg-ota-product.zip \
             releases/microg-uninstall.zip
