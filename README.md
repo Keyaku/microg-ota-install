@@ -2,36 +2,14 @@
 
 Flashable (recovery / addon.d) package that installs a minimal microG stack into the `product` partition, plus tooling to build it from the latest official microG releases.
 
-## Layout
+## Download
 
-- `package/` — the single package source, shared by both the install and uninstall zips. `META-INF/com/google/android/update-binary` is one unified script that installs **or** uninstalls depending on the `action.env` marker the build stamps in.
-- `package/*.sh` — shell helpers sourced by the unified `update-binary` via `recovery-tools.sh` (a thin aggregator over `output.sh`, `detect.sh`, `partitions.sh`, `native-libs.sh`, `microg-defs.sh`). They live alongside the package tree and ship in both zips.
-- `build-microg-ota.sh` — fetches the latest microG builds, stages them, and zips both flavours into `releases/`.
-- `releases/` — built flashable zips (gitignored).
-- `microG/` — download cache for fetched APKs (gitignored).
+Grab the latest prebuilt zips from the [**Releases**](https://github.com/Keyaku/microg-ota-install/releases/latest) page, or use these stable "latest" links:
 
-Both zips are built from the same `package/` tree and the same `update-binary`. The install zip bundles the `product/`/`system/` payload and `action.env=install`; the uninstall zip carries neither payload — just `META-INF/`, the helper `*.sh`, and `action.env=uninstall`.
+- **Installer** — [`microg-ota-product.zip`](https://github.com/Keyaku/microg-ota-install/releases/latest/download/microg-ota-product.zip)
+- **Uninstaller** — [`microg-uninstall.zip`](https://github.com/Keyaku/microg-ota-install/releases/latest/download/microg-uninstall.zip)
 
-## Building a release
-
-```sh
-./build-microg-ota.sh
-```
-
-Optional: set `GITHUB_TOKEN` to avoid GitHub API rate limits.
-
-The script:
-
-1. Queries the latest `microg/GmsCore` GitHub release.
-2. Downloads GmsCore (`com.google.android.gms`) and FakeStore (`com.android.vending`) into `microG/`.
-3. Stages them into `package/product/` and writes `version.env` — the tooling version (`pkgver`, from `git describe`) plus the bundled microG version (`mgver`/`mgverc`/`mgdate`), both shown in the installer banner.
-4. Zips the `package/` tree twice — `META-INF/`, `product/`, `system/` land at the archive root — writing `releases/microg-ota-product-<x.y.z>.zip` (plus a stable `microg-ota-product.zip` alias, with `action.env=install`) and a lightweight `releases/microg-uninstall.zip` (`action.env=uninstall`, no payload).
-
-The package version (`x.y.z`) is owned by this repo, **not** microG: it comes from the latest `vX.Y.Z` git tag via `git describe` (untagged/dirty trees build as a `0.0.0-dev.<hash>` string). The bundled microG APK version is tracked and displayed separately.
-
-### GsfProxy
-
-microG no longer publishes GsfProxy (GmsCore provides GSF). If a legacy `microG/GsfProxy.apk` is present it is reused; otherwise GsfProxy is omitted and the installer skips it.
+Each release also carries a version-stamped installer (`microg-ota-product-<x.y.z>.zip`) if you want to pin a specific build. Prefer building it yourself? See [Building from source](#building-from-source).
 
 ## Installing
 
@@ -55,6 +33,39 @@ A ~3 MB margin is reserved for filesystem overhead. The `addon.d` restore path a
 ## Uninstalling
 
 Flash `microg-uninstall.zip`. It removes the microG apps, the two privapp permission XMLs and the addon.d survival script from both `product` and `system`.
+
+## Building from source
+
+For development or to roll your own build instead of using a release:
+
+```sh
+./build-microg-ota.sh
+```
+
+Optional: set `GITHUB_TOKEN` to avoid GitHub API rate limits.
+
+The script:
+
+1. Queries the latest `microg/GmsCore` GitHub release.
+2. Downloads GmsCore (`com.google.android.gms`) and FakeStore (`com.android.vending`) into `microG/`.
+3. Stages them into `package/product/` and writes `version.env` — the tooling version (`pkgver`, from `git describe`) plus the bundled microG version (`mgver`/`mgverc`/`mgdate`), both shown in the installer banner.
+4. Zips the `package/` tree twice — `META-INF/`, `product/`, `system/` land at the archive root — writing `releases/microg-ota-product-<x.y.z>.zip` (plus a stable `microg-ota-product.zip` alias, with `action.env=install`) and a lightweight `releases/microg-uninstall.zip` (`action.env=uninstall`, no payload).
+
+The package version (`x.y.z`) is owned by this repo, **not** microG: it comes from the latest `vX.Y.Z` git tag via `git describe` (untagged/dirty trees build as a `0.0.0-dev.<hash>` string). The bundled microG APK version is tracked and displayed separately. Pushing a `vX.Y.Z` tag builds and publishes a GitHub Release automatically (see `.github/workflows/release.yml`).
+
+### GsfProxy
+
+microG no longer publishes GsfProxy (GmsCore provides GSF). If a legacy `microG/GsfProxy.apk` is present it is reused; otherwise GsfProxy is omitted and the installer skips it.
+
+### Layout
+
+- `package/` — the single package source, shared by both the install and uninstall zips. `META-INF/com/google/android/update-binary` is one unified script that installs **or** uninstalls depending on the `action.env` marker the build stamps in.
+- `package/*.sh` — shell helpers sourced by the unified `update-binary` via `recovery-tools.sh` (a thin aggregator over `output.sh`, `detect.sh`, `partitions.sh`, `native-libs.sh`, `microg-defs.sh`). They live alongside the package tree and ship in both zips.
+- `build-microg-ota.sh` — fetches the latest microG builds, stages them, and zips both flavours into `releases/`.
+- `releases/` — built flashable zips (gitignored).
+- `microG/` — download cache for fetched APKs (gitignored).
+
+Both zips are built from the same `package/` tree and the same `update-binary`. The install zip bundles the `product/`/`system/` payload and `action.env=install`; the uninstall zip carries neither payload — just `META-INF/`, the helper `*.sh`, and `action.env=uninstall`.
 
 ## Credits & licensing
 
