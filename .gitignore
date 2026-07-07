@@ -1,0 +1,25 @@
+# Build artifacts / payloads (fetched or generated, never committed)
+*.zip
+*.apk
+*.apk.asc
+*.part
+
+# Generated at build time by build-microg-ota.sh (version banner + the
+# ACTION=install|uninstall marker the unified update-binary dispatches on).
+package/version.env
+package/action.env
+
+# Downloaded microG payloads land here
+microG/
+
+# OS / editor cruft
+.DS_Store
+*~
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Temp
+*.tmp
+*.log
