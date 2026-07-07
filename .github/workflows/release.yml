@@ -54,5 +54,4 @@ jobs:
               --notes "microG OTA package \`${{ steps.ver.outputs.pkgver }}\` — bundles microG GmsCore \`${{ steps.ver.outputs.mgver }}\`."
           gh release upload "$GITHUB_REF_NAME" --clobber \
             releases/microg-ota-product-*.zip \
-            releases/microg-ota-product.zip \
             releases/microg-uninstall.zip

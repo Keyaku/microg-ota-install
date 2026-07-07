@@ -160,11 +160,8 @@ write_action install
 	-x '*.DS_Store' )
 
 mv -f "$tmpzip" "$RELEASES_DIR/$out"
-# Keep a stable unversioned alias too.
-cp -f "$RELEASES_DIR/$out" "$RELEASES_DIR/microg-ota-product.zip"
 
 echo ">> Done: $RELEASES_DIR/$out"
-echo ">>       $RELEASES_DIR/microg-ota-product.zip (alias)"
 
 # --- zip the uninstaller (lightweight: no payload, action=uninstall) ------
 uout="microg-uninstall.zip"

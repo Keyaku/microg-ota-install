@@ -4,16 +4,16 @@ Flashable (recovery / addon.d) package that installs a minimal microG stack into
 
 ## Download
 
-Grab the latest prebuilt zips from the [**Releases**](https://github.com/Keyaku/microg-ota-install/releases/latest) page, or use these stable "latest" links:
+Grab the prebuilt zips from the [**Releases**](https://github.com/Keyaku/microg-ota-install/releases/latest) page:
 
-- **Installer** — [`microg-ota-product.zip`](https://github.com/Keyaku/microg-ota-install/releases/latest/download/microg-ota-product.zip)
-- **Uninstaller** — [`microg-uninstall.zip`](https://github.com/Keyaku/microg-ota-install/releases/latest/download/microg-uninstall.zip)
+- **Installer** — `microg-ota-product-<x.y.z>.zip` (version-stamped; pick it from the latest release's assets).
+- **Uninstaller** — [`microg-uninstall.zip`](https://github.com/Keyaku/microg-ota-install/releases/latest/download/microg-uninstall.zip) (stable name, so this "latest" link always resolves).
 
-Each release also carries a version-stamped installer (`microg-ota-product-<x.y.z>.zip`) if you want to pin a specific build. Prefer building it yourself? See [Building from source](#building-from-source).
+Prefer building it yourself? See [Building from source](#building-from-source).
 
 ## Installing
 
-Flash `microg-ota-product.zip` in a recovery (TWRP/LineageOS recovery). The installer mounts `system` and `product`, removes any previous copies, installs the APKs into `/product/{app,priv-app}`, drops the privapp permission XMLs, and installs the `addon.d` survival script so the apps persist across OTA updates.
+Flash the installer zip (`microg-ota-product-<x.y.z>.zip`) in a recovery (TWRP/LineageOS recovery). The installer mounts `system` and `product`, removes any previous copies, installs the APKs into `/product/{app,priv-app}`, drops the privapp permission XMLs, and installs the `addon.d` survival script so the apps persist across OTA updates.
 
 ### Native libraries (Cronet)
 
@@ -49,7 +49,7 @@ The script:
 1. Queries the latest `microg/GmsCore` GitHub release.
 2. Downloads GmsCore (`com.google.android.gms`) and FakeStore (`com.android.vending`) into `microG/`.
 3. Stages them into `package/product/` and writes `version.env` — the tooling version (`pkgver`, from `git describe`) plus the bundled microG version (`mgver`/`mgverc`/`mgdate`), both shown in the installer banner.
-4. Zips the `package/` tree twice — `META-INF/`, `product/`, `system/` land at the archive root — writing `releases/microg-ota-product-<x.y.z>.zip` (plus a stable `microg-ota-product.zip` alias, with `action.env=install`) and a lightweight `releases/microg-uninstall.zip` (`action.env=uninstall`, no payload).
+4. Zips the `package/` tree twice — `META-INF/`, `product/`, `system/` land at the archive root — writing `releases/microg-ota-product-<x.y.z>.zip` (`action.env=install`) and a lightweight `releases/microg-uninstall.zip` (`action.env=uninstall`, no payload).
 
 The package version (`x.y.z`) is owned by this repo, **not** microG: it comes from the latest `vX.Y.Z` git tag via `git describe` (untagged/dirty trees build as a `0.0.0-dev.<hash>` string). The bundled microG APK version is tracked and displayed separately. Pushing a `vX.Y.Z` tag builds and publishes a GitHub Release automatically (see `.github/workflows/release.yml`).
 
