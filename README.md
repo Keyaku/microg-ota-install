@@ -24,8 +24,10 @@ The script:
 
 1. Queries the latest `microg/GmsCore` GitHub release.
 2. Downloads GmsCore (`com.google.android.gms`) and FakeStore (`com.android.vending`) into `microG/`.
-3. Stages them into `package/product/` and writes `version.env` (sourced by the installer for the version banner).
-4. Zips the `package/` tree twice — `META-INF/`, `product/`, `system/` land at the archive root — writing `releases/microg-ota-product-<ver>.zip` (plus a stable `microg-ota-product.zip` alias, with `action.env=install`) and a lightweight `releases/microg-uninstall.zip` (`action.env=uninstall`, no payload).
+3. Stages them into `package/product/` and writes `version.env` — the tooling version (`pkgver`, from `git describe`) plus the bundled microG version (`mgver`/`mgverc`/`mgdate`), both shown in the installer banner.
+4. Zips the `package/` tree twice — `META-INF/`, `product/`, `system/` land at the archive root — writing `releases/microg-ota-product-<x.y.z>.zip` (plus a stable `microg-ota-product.zip` alias, with `action.env=install`) and a lightweight `releases/microg-uninstall.zip` (`action.env=uninstall`, no payload).
+
+The package version (`x.y.z`) is owned by this repo, **not** microG: it comes from the latest `vX.Y.Z` git tag via `git describe` (untagged/dirty trees build as a `0.0.0-dev.<hash>` string). The bundled microG APK version is tracked and displayed separately.
 
 ### GsfProxy
 
