@@ -53,3 +53,9 @@ A ~3 MB margin is reserved for filesystem overhead. The `addon.d` restore path a
 ## Uninstalling
 
 Flash `microg-uninstall.zip`. It removes the microG apps, the two privapp permission XMLs and the addon.d survival script from both `product` and `system`.
+
+## Credits & licensing
+
+The tooling and packaging scripts in this repository are licensed under the [MIT License](LICENSE).
+
+The APKs this package fetches and installs — **GmsCore** (`com.google.android.gms`) and **FakeStore** (`com.android.vending`) — are **not** part of this repository. They are built and published by the [microG project](https://github.com/microg/GmsCore), which is licensed under the [Apache License 2.0](https://github.com/microg/GmsCore/blob/master/LICENSE). All credit for microG itself goes to its authors and contributors; this project only repackages their official releases into a flashable form.
