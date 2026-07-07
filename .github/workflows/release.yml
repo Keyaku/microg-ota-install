@@ -1,0 +1,53 @@
+name: Release
+
+# Push a `vX.Y.Z` tag to build and publish a GitHub Release with the flashable
+# zips. `workflow_dispatch` runs a test build (no release) whose zips are kept
+# as workflow artifacts.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed for `gh release create`
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history + tags so `git describe` resolves pkgver
+
+      # curl, jq, zip, unzip are all preinstalled on ubuntu-latest.
+      - name: Build packages
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # lifts GitHub API rate limits
+        run: ./build-microg-ota.sh
+
+      - name: Read versions
+        id: ver
+        run: |
+          . package/version.env
+          echo "pkgver=$pkgver" >> "$GITHUB_OUTPUT"
+          echo "mgver=$mgver"   >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: microg-ota-${{ steps.ver.outputs.pkgver }}
+          path: releases/*.zip
+          if-no-files-found: error
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes "microG OTA package \`${{ steps.ver.outputs.pkgver }}\` — bundles microG GmsCore \`${{ steps.ver.outputs.mgver }}\`." \
+            releases/microg-ota-product-*.zip \
+            releases/microg-ota-product.zip \
+            releases/microg-uninstall.zip
