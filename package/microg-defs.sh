@@ -15,12 +15,20 @@ PERM_PATH="etc/permissions"
 PERM_GMS='privapp-permissions-com.google.android.gms.xml'
 PERM_STORE='privapp-permissions-com.android.vending.xml'
 
+# Default (dangerous) permission auto-grants. These are optional: the build only
+# emits them when the APK requests dangerous permissions, and the installer
+# skips any that aren't bundled.
+DEFPERM_PATH="etc/default-permissions"
+DEFPERM_GMS='default-permissions-com.google.android.gms.xml'
+DEFPERM_STORE='default-permissions-com.android.vending.xml'
+
 # Canonical install locations within the target partition (GmsCore/Companion
 # are privileged; GsfProxy is a plain app).
 GSF_DIR="app/$GSF"
 GMS_DIR="priv-app/$GMS"
 STORE_DIR="priv-app/$STORE"
 PERM_DIR="$PERM_PATH"
+DEFPERM_DIR="$DEFPERM_PATH"
 
 # Print the framed title/description banner.
 # $1 = title   $2 = description (optional)

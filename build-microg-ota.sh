@@ -116,6 +116,24 @@ else
 	echo "   GsfProxy: none available, omitting"
 fi
 
+# --- generate permission XMLs from the staged APKs ------------------------
+# The privapp-permissions / default-permissions XMLs are now derived here
+# from the exact APKs being shipped, so the grants stay in lockstep with what
+# the APKs request and how current Android releases classify each permission
+# (see tools/gen-perm-xml.sh). This is a required build step;
+# it needs aapt2/aapt + apksigner/keytool. Set SKIP_PERM_XML=1 only if you have
+# placed the XMLs under package/product/etc/{permissions,default-permissions}/
+# yourself.
+if [ "${SKIP_PERM_XML:-0}" != 1 ]; then
+	echo ">> Generating permission XMLs from the staged APKs ..."
+	"$SCRIPT_DIR/tools/gen-perm-xml.sh" \
+		"$MICROG_DIR/${ASSET_NAME[gms]}" \
+		"$MICROG_DIR/${ASSET_NAME[store]}" \
+		|| { echo "ERROR: permission XML generation failed; refusing to build an incomplete package." >&2; exit 1; }
+else
+	echo ">> Skipping permission XML generation (SKIP_PERM_XML=1); using pre-existing XMLs"
+fi
+
 # --- write version.env (sourced by update-binary) -------------------------
 # Package (tooling) version -- owned by THIS repo, not microG. Derived from the
 # git tag so a `vX.Y.Z` tag drives the release version; untagged/dirty trees get

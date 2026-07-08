@@ -36,7 +36,7 @@ Notes:
 
 - Set `ANDROID_SERIAL` to target a specific device non-interactively, or `GITHUB_TOKEN` to avoid GitHub API rate limits.
 - If `adb sideload` reports an error (occasionally spurious; the device closes the connection as the flash finishes), the script lets you retry, continue (reboot anyway), or abort.
-- The waits for a device to reach sideload/recovery/connected state are tuned low by default (`WAIT_SIDELOAD`/`WAIT_RECOVERY`=30s, `WAIT_DEVICE`=90s). A slower device may time out before it's ready; bump the relevant one by defining it before `bash` — e.g. `curl -fsSL <url> | WAIT_SIDELOAD=90 WAIT_RECOVERY=90 bash` (or `WAIT_SIDELOAD=90 ./flash-microg.sh` from a clone). On timeout the script tells you which variable to raise.
+- The waits for a device to reach sideload/recovery/connected state are tuned low by default (`WAIT_SIDELOAD`/`WAIT_RECOVERY`=30s, `WAIT_DEVICE`=90s). A slower device may time out before it's ready; bump the relevant one by defining it before `bash`. E.g. `curl -fsSL <url> | WAIT_SIDELOAD=90 WAIT_RECOVERY=90 bash` (or `WAIT_SIDELOAD=90 ./flash-microg.sh` from a clone). On timeout the script tells you which variable to raise.
 
 ## Manual installation
 
@@ -44,8 +44,8 @@ Notes:
 
 Grab the prebuilt zips from the [**Releases**](https://github.com/Keyaku/microg-ota-install/releases/latest) page:
 
-- **Installer** — `microg-ota-product-<x.y.z>.zip` (version-stamped; pick it from the latest release's assets).
-- **Uninstaller** — [`microg-uninstall.zip`](https://github.com/Keyaku/microg-ota-install/releases/latest/download/microg-uninstall.zip).
+- **Installer** :`microg-ota-product-<x.y.z>.zip` (version-stamped; pick it from the latest release's assets).
+- **Uninstaller**: [`microg-uninstall.zip`](https://github.com/Keyaku/microg-ota-install/releases/latest/download/microg-uninstall.zip).
 
 Prefer building it yourself? See [Building from source](#building-from-source).
 
@@ -68,17 +68,17 @@ Flash the installer zip (`microg-ota-product-<x.y.z>.zip`) in a recovery (TWRP/L
 
 The APKs being installed are **GmsCore**, **GmsCompanion** and **GsfProxy**.
 
-The installer mounts `system` and `product`, removes any previous copies, installs the APKs into `/product/{app,priv-app}`, drops the `privapp` permission XMLs, and installs the `addon.d` survival script so the apps persist across OTA updates.
+The installer mounts `system` and `product`, removes any previous copies, installs the APKs into `/product/{app,priv-app}`, drops the `privapp-permissions` XMLs (and `default-permissions` too, if the build was run with them enabled), and installs the `addon.d` survival script so the apps persist across OTA updates.
 
 Also, contrary to `microg-unofficial-installer`, this **does not** touch the `userdata` partition; in case you had a user installation of microG prior to this, you'd best uninstall it before flashing this.
 
 ### Native libraries (Cronet)
 
-PackageManager does not unpack an APK's bundled JNI libraries for pre-installed (system/privileged) apps the way it does for user-installed ones — it expects them already on disk under `<app>/lib/<arch>/`. GmsCore ships `libcronet.<ver>.so`, and apps that pull Cronet from Play Services (e.g. Google Maps) crash with a missing `libcronet.<ver>.so` if it is not extracted. The installer therefore unpacks GmsCore's native libs into `/product/priv-app/GmsCore/lib/<arch>/` for the device's ABI at flash time, and the `addon.d` script regenerates them (`post-restore`) after each OTA so the fix survives updates.
+PackageManager does not unpack an APK's bundled JNI libraries for pre-installed (system/privileged) apps the way it does for user-installed ones; it expects them already on disk under `<app>/lib/<arch>/`. GmsCore ships `libcronet.<ver>.so`, and apps that pull Cronet from Play Services (e.g. Google Maps) crash with a missing `libcronet.<ver>.so` if it is not extracted. The installer therefore unpacks GmsCore's native libs into `/product/priv-app/GmsCore/lib/<arch>/` for the device's ABI at flash time, and the `addon.d` script regenerates them (`post-restore`) after each OTA so the fix survives updates.
 
 ### Storage guard rails
 
-Before writing anything, the installer measures free space on `/product` (crediting back the footprint of any copy it is about to overwrite) and sizes the microG core and GmsCore's native libs. It then picks one of four outcomes — and never half-writes:
+Before writing anything, the installer measures free space on `/product` (crediting back the footprint of any copy it is about to overwrite) and sizes the microG core and GmsCore's native libs. It then picks one of four outcomes and never half-writes:
 
 - **Core doesn't fit** → abort with a short message, leaving `/product` (and any existing install) untouched.
 - **Core + all native libs fit** → install everything (`LIBMODE=full`).
@@ -90,7 +90,7 @@ A ~3 MB margin is reserved for filesystem overhead. The `addon.d` restore path a
 ## Uninstalling
 
 Download and flash `microg-uninstall.zip` just as described in the [Manual installation](#manual-installation).
-It removes the microG apps, the two privapp permission XMLs and the addon.d survival script from both `product` and `system`.
+It removes the microG apps, the `privapp-permissions` and `default-permissions` XMLs and the `addon.d` survival script from both `product` and `system`.
 
 ## Building from source
 
@@ -105,11 +105,33 @@ Optional: set `GITHUB_TOKEN` to avoid GitHub API rate limits.
 The script:
 
 1. Queries the latest `microg/GmsCore` GitHub release.
-2. Downloads GmsCore (`com.google.android.gms`) and FakeStore (`com.android.vending`) into `microG/`.
+2. Downloads GmsCore (`com.google.android.gms`) and GmsCompanion (`com.android.vending`) into `microG/`.
 3. Stages them into `package/product/` and writes `version.env` — the tooling version (`pkgver`, from `git describe`) plus the bundled microG version (`mgver`/`mgverc`/`mgdate`), both shown in the installer banner.
-4. Zips the `package/` tree twice — `META-INF/`, `product/`, `system/` land at the archive root — writing `releases/microg-ota-product-<x.y.z>.zip` (`action.env=install`) and a lightweight `releases/microg-uninstall.zip` (`action.env=uninstall`, no payload).
+4. Generates the `privapp-permissions` XMLs from the staged APKs (see [Permission XMLs](#permission-xmls) below). These are **not** committed, making this a required build step; it aborts if generation fails (bypass with `SKIP_PERM_XML=1` only if you placed the XMLs yourself).
+5. Zips the `package/` tree twice (`META-INF/`, `product/`, `system/` land at the archive root) writing `releases/microg-ota-product-<x.y.z>.zip` (`action.env=install`) and a lightweight `releases/microg-uninstall.zip` (`action.env=uninstall`, no payload).
 
 The package version (`x.y.z`) is owned by this repo, **not** microG: it comes from the latest `vX.Y.Z` git tag via `git describe` (untagged/dirty trees build as a `0.0.0-dev.<hash>` string). The bundled microG APK version is tracked and displayed separately.
+
+### Permission XMLs
+
+The privileged apps need a `privapp-permissions` allow-list on `/product/etc/permissions/` for the *privileged* permissions they request. Without it those grants are denied at runtime, and on ROMs with `ro.control_privapp_permissions=enforce` a missing entry blocks boot outright.
+
+A hand-maintained list rots over time as microG adds/removes a requested permission, or as a new Android release reclassifies one (e.g. `normal` → `privileged`). To avoid that, these XMLs are **not committed**; the build **derives** them from the exact APKs it is about to ship, via [`tools/gen-perm-xml.sh`](tools/gen-perm-xml.sh). It reads each APK's requested permissions (`aapt`/`aapt2`), cross-references them against a database of AOSP permission declarations per Android API level (23→36), and keeps the ones that are privileged.
+
+The generation logic itself is **downloaded from upstream at build time** (not vendored) so upstream fixes are picked up automatically; see [Credits & licensing](#credits--licensing) and [`tools/THIRD_PARTY.md`](tools/THIRD_PARTY.md). The upstream tools and the AOSP database are cached under `${XDG_CACHE_HOME:-~/.cache}/microg-ota-install/`.
+
+The allow-list is emitted **digest-less** (matched by package name only, no `sha256-cert-digest`), the form with a long track record on ROMs with `ro.control_privapp_permissions=enforce`. The generator can also emit `default-permissions` (auto-grants for dangerous runtime perms), but that's opt-in via `--default-permissions` and off by default.
+
+You can also run it standalone:
+
+```sh
+tools/gen-perm-xml.sh path/to/GmsCore.apk path/to/GmsCompanion.apk
+#   --default-permissions     also emit default-permissions (off by default)
+#   --refresh                 re-download the upstream tools and rebuild the DB
+#   UPSTREAM_REF=<tag/commit> pin the upstream tool version (default: main)
+```
+
+Requirements: `curl` + `aapt2`/`aapt` (Android SDK build-tools). The upstream generator also needs `apksigner` or `keytool` (auto-detected) to run, even though the digest it produces is stripped from the output.
 
 ### GsfProxy
 
@@ -117,11 +139,13 @@ microG no longer publishes `GsfProxy` (GmsCore provides GSF). If a legacy `micro
 
 ### Layout
 
-- `package/` — the single package source, shared by both the install and uninstall zips. `META-INF/com/google/android/update-binary` is one unified script that installs **or** uninstalls depending on the `action.env` marker the build stamps in.
-- `package/*.sh` — shell helpers sourced by the unified `update-binary` via `recovery-tools.sh` (a thin aggregator over `output.sh`, `detect.sh`, `partitions.sh`, `native-libs.sh`, `microg-defs.sh`). They live alongside the package tree and ship in both zips.
-- `build-microg-ota.sh` — fetches the latest microG builds, stages them, and zips both flavours into `releases/`.
-- `releases/` — built flashable zips (gitignored).
-- `microG/` — download cache for fetched APKs (gitignored).
+- `package/`: the single package source, shared by both the install and uninstall zips. `META-INF/com/google/android/update-binary` is one unified script that installs **or** uninstalls depending on the `action.env` marker the build stamps in.
+- `package/*.sh`: shell helpers sourced by the unified `update-binary` via `recovery-tools.sh` (a thin aggregator over `output.sh`, `detect.sh`, `partitions.sh`, `native-libs.sh`, `microg-defs.sh`). They live alongside the package tree and ship in both zips.
+- `build-microg-ota.sh`: fetches the latest microG builds, stages them, generates the permission XMLs, and zips both flavours into `releases/`.
+- `tools/gen-perm-xml.sh`: orchestrator that generates the permission XMLs from the staged APKs (MIT, part of this repo). It downloads ale5000's generation tools at build time; see [`tools/THIRD_PARTY.md`](tools/THIRD_PARTY.md).
+- `package/product/etc/permissions/*.xml` (and `default-permissions/` when enabled): generated at build time, never committed (gitignored).
+- `releases/`: built flashable zips (gitignored).
+- `microG/`: download cache for fetched APKs (gitignored).
 
 Both zips are built from the same `package/` tree and the same `update-binary`. The install zip bundles the `product/`/`system/` payload and `action.env=install`; the uninstall zip carries neither payload — just `META-INF/`, the helper `*.sh`, and `action.env=uninstall`.
 
@@ -129,4 +153,6 @@ Both zips are built from the same `package/` tree and the same `update-binary`. 
 
 The tooling and packaging scripts in this repository are licensed under the [MIT License](LICENSE).
 
-The APKs this package fetches and installs — **GmsCore** (`com.google.android.gms`) and **GmsCompanion** (`com.android.vending`) — are **not** part of this repository. They are built and published by the [microG project](https://github.com/microg/GmsCore), which is licensed under the [Apache License 2.0](https://github.com/microg/GmsCore/blob/master/LICENSE). All credit for microG itself goes to its authors and contributors; this project only repackages their official releases into a flashable form.
+The APKs that this package fetches and installs — **GmsCore** (`com.google.android.gms`) and **GmsCompanion** (`com.android.vending`) — are **not** part of this repository. They are built and published by the [microG project](https://github.com/microg/GmsCore), which is licensed under the [Apache License 2.0](https://github.com/microg/GmsCore/blob/master/LICENSE). All credit for microG itself goes to its authors and contributors; this project only repackages their official releases into a flashable form.
+
+The permission-XML generation tools (`generate-perm-xml.sh`, `dl-perm-list.sh`) that [`tools/gen-perm-xml.sh`](tools/gen-perm-xml.sh) downloads at build time are the work of **ale5000** ([@ale5000-git](https://github.com/ale5000-git)) from the [`microg-unofficial-installer`](https://github.com/micro5k/microg-unofficial-installer) project, used under their own terms (`GPL-3.0-or-later OR Apache-2.0`) and **not** this repository's MIT license. See [`tools/THIRD_PARTY.md`](tools/THIRD_PARTY.md) for full provenance. All credit for that approach and code goes to ale5000.

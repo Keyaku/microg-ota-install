@@ -9,6 +9,10 @@
 package/version.env
 package/action.env
 
+# Packaged XMLs, including those (re)generated at build time
+package/**/*.xml
+package/**/*.xml
+
 # Downloaded microG payloads land here
 microG/
 

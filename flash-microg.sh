@@ -273,11 +273,14 @@ do_sideload() {
 	done
 }
 
-# Try the direct route first: `adb reboot sideload` boots straight into the
-# sideload state on devices whose recovery supports it (most LineageOS builds).
+# Try the direct route first: `adb reboot sideload-auto-reboot` boots straight
+# into the sideload state AND makes the device reboot to system on its own once
+# the package is applied, on devices whose recovery supports it (most LineageOS
+# builds). The auto-reboot variant matters because a plain post-flash
+# `adb reboot` does not reliably land from some recoveries' sideload-done state.
 try_direct_sideload() {
-	log "Rebooting to sideload..."
-	adbd reboot sideload 2>/dev/null || return 1
+	log "Rebooting to sideload (auto-reboot)..."
+	adbd reboot sideload-auto-reboot 2>/dev/null || return 1
 	wait_for_state "$SERIAL" sideload "$WAIT_SIDELOAD"
 }
 
@@ -313,17 +316,26 @@ recovery_sideload() {
 }
 
 flash() {
+	# The direct route uses sideload-auto-reboot, so the device reboots itself
+	# after applying; the recovery fallback does not, so we reboot from here.
+	local auto_reboot=0
 	if try_direct_sideload; then
 		ok "Device is in sideload mode."
+		auto_reboot=1
 	else
 		recovery_sideload
 	fi
 
 	do_sideload || die "flashing failed."
 
-	log "Rebooting to system..."
-	adbd reboot 2>/dev/null || warn "Could not send reboot; reboot the device manually."
-	ok "Done. microG should be installed after the device finishes booting."
+	if [ "$auto_reboot" -eq 1 ]; then
+		ok "Flashed. The device will reboot to system on its own."
+	else
+		log "Rebooting to system..."
+		adbd reboot 2>/dev/null || warn "Could not send reboot; select 'Reboot system now' on the device."
+		ok "Done."
+	fi
+	ok "microG should be up after the device finishes booting."
 }
 
 flash

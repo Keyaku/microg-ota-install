@@ -9,10 +9,15 @@
 
 PRODUCT=$SYSMOUNT/product
 
+# One path per line, relative to $PRODUCT. Missing files are skipped by
+# backup_file/restore_file, so listing the optional default-permissions XMLs
+# unconditionally is safe.
 list_files() {
 cat <<EOF
 etc/permissions/privapp-permissions-com.google.android.gms.xml
 etc/permissions/privapp-permissions-com.android.vending.xml
+etc/default-permissions/default-permissions-com.google.android.gms.xml
+etc/default-permissions/default-permissions-com.android.vending.xml
 priv-app/GmsCore/GmsCore.apk
 priv-app/GmsCompanion/GmsCompanion.apk
 app/GsfProxy/GsfProxy.apk

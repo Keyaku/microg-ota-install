@@ -71,6 +71,15 @@ install() {
 	ui_print 'done'
 }
 
+# Like install(), but a no-op when the payload isn't bundled (used for the
+# optional default-permissions XMLs, which only exist when the APK requests
+# dangerous permissions).
+install_optional() {
+	if [ -f "product/$3/$2" ]; then
+		install "$1" "$2" "$3"
+	fi
+}
+
 do_install() {
 	print_banner "Minimal microG Installer" "The Essentials only microG pack"
 
@@ -177,6 +186,8 @@ do_install() {
 	done
 	rm -f "$PRODUCT/$PERM_PATH/$PERM_GMS" "$PRODUCT/$PERM_PATH/$PERM_STORE"
 	rm -f "$SYSTEM/$PERM_PATH/$PERM_GMS"  "$SYSTEM/$PERM_PATH/$PERM_STORE"
+	rm -f "$PRODUCT/$DEFPERM_PATH/$DEFPERM_GMS" "$PRODUCT/$DEFPERM_PATH/$DEFPERM_STORE"
+	rm -f "$SYSTEM/$DEFPERM_PATH/$DEFPERM_GMS"  "$SYSTEM/$DEFPERM_PATH/$DEFPERM_STORE"
 	rm -f "$SYSTEM/addon.d/$ADDOND_MICROG"
 
 	# Install locations (GSF_DIR/GMS_DIR/STORE_DIR/PERM_DIR) come from
@@ -201,6 +212,11 @@ do_install() {
 
 	install "$GMS permissions"   $PERM_GMS   "$PERM_DIR"
 	install "$STORE permissions" $PERM_STORE "$PERM_DIR"
+
+	# Default-permission auto-grants for dangerous perms (e.g. location); only
+	# present when the build generated them, hence install_optional.
+	install_optional "$GMS default perms"   $DEFPERM_GMS   "$DEFPERM_DIR"
+	install_optional "$STORE default perms" $DEFPERM_STORE "$DEFPERM_DIR"
 
 	if [ -f "system/addon.d/$ADDOND_MICROG" ]; then
 		ui_print "Installing: addon.d survival script..."
@@ -237,6 +253,8 @@ do_uninstall() {
 	ui_print "Removing privapp permissions"
 	rm -f "$PRODUCT/$PERM_PATH/$PERM_GMS" "$PRODUCT/$PERM_PATH/$PERM_STORE"
 	rm -f "$SYSTEM/$PERM_PATH/$PERM_GMS"  "$SYSTEM/$PERM_PATH/$PERM_STORE"
+	rm -f "$PRODUCT/$DEFPERM_PATH/$DEFPERM_GMS" "$PRODUCT/$DEFPERM_PATH/$DEFPERM_STORE"
+	rm -f "$SYSTEM/$DEFPERM_PATH/$DEFPERM_GMS"  "$SYSTEM/$DEFPERM_PATH/$DEFPERM_STORE"
 
 	# Remove the addon.d survival script LAST -- while it is present, an OTA's
 	# post-restore step would re-unpack GmsCore's native libs from the (now
