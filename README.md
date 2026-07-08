@@ -2,18 +2,75 @@
 
 Flashable (recovery / addon.d) package that installs a minimal microG stack into the `product` partition, plus tooling to build it from the latest official microG releases.
 
-## Download
+## About this project
+
+There exist a few microG flash installers, some more rudmentary than others, with the most recommended one being [microg-unofficial-installer](https://github.com/micro5k/microg-unofficial-installer), created by one of the official maintainers of microG [@ale5000-git](https://github.com/ale5000-git). Their project is strongly more robust than this; in no way does this serve as a direct replace, rather an alternative that, instead of flashing to the `/system` partition, it writes to `/product` due to the possibility of `/system` not having enough storage for a minimal microG installation (for instance: the Google Pixel 9).
+Using `/product` instead is the next approach to conform to Android's [Shared system image](https://source.android.com/docs/core/architecture/partitions/shared-system-image) mechanisms.
+
+In short: Until `microg-unofficial-installer` offers the possibility to install microG to `/product`, this is the better approach with the bare minimnum codebase to achieve it.
+
+## Automatic installation
+
+The quickest way to flash microG is the [`flash-microg.sh`](flash-microg.sh) script. It detects your device, downloads the latest release zip into a cache directory, sideloads it, and reboots.
+
+Make sure [`adb`](https://developer.android.com/tools/adb) is installed, connect your device with USB debugging enabled, then run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Keyaku/microg-ota-install/main/flash-microg.sh | bash
+```
+
+Or, from a clone:
+
+```sh
+./flash-microg.sh
+```
+
+What it does:
+
+1. **Detects a device.** With exactly one attached, it proceeds immediately; with several, it prompts you to pick one; with none, it waits for you to plug one in.
+2. **Downloads the latest release** (`microg-ota-product-<x.y.z>.zip`) into `${XDG_CACHE_HOME:-~/.cache}/microg-ota-install/`, reusing the cache on subsequent runs.
+3. **Reboots to sideload and flashes automatically.** On success it reboots the device back to system.
+4. **Falls back gracefully** when a device doesn't support rebooting straight into sideload: it reboots to recovery and asks you to select *"Apply update from ADB"* (a.k.a. *"ADB sideload"*). It then auto-detects sideload mode and continues on its own; if it can't, it waits for you to press ENTER.
+
+Notes:
+
+- Set `ANDROID_SERIAL` to target a specific device non-interactively, or `GITHUB_TOKEN` to avoid GitHub API rate limits.
+- If `adb sideload` reports an error (occasionally spurious; the device closes the connection as the flash finishes), the script lets you retry, continue (reboot anyway), or abort.
+- The waits for a device to reach sideload/recovery/connected state are tuned low by default (`WAIT_SIDELOAD`/`WAIT_RECOVERY`=30s, `WAIT_DEVICE`=90s). A slower device may time out before it's ready; bump the relevant one by defining it before `bash` — e.g. `curl -fsSL <url> | WAIT_SIDELOAD=90 WAIT_RECOVERY=90 bash` (or `WAIT_SIDELOAD=90 ./flash-microg.sh` from a clone). On timeout the script tells you which variable to raise.
+
+## Manual installation
+
+### Download
 
 Grab the prebuilt zips from the [**Releases**](https://github.com/Keyaku/microg-ota-install/releases/latest) page:
 
 - **Installer** — `microg-ota-product-<x.y.z>.zip` (version-stamped; pick it from the latest release's assets).
-- **Uninstaller** — [`microg-uninstall.zip`](https://github.com/Keyaku/microg-ota-install/releases/latest/download/microg-uninstall.zip) (stable name, so this "latest" link always resolves).
+- **Uninstaller** — [`microg-uninstall.zip`](https://github.com/Keyaku/microg-ota-install/releases/latest/download/microg-uninstall.zip).
 
 Prefer building it yourself? See [Building from source](#building-from-source).
 
-## Installing
+### Installing
 
-Flash the installer zip (`microg-ota-product-<x.y.z>.zip`) in a recovery (TWRP/LineageOS recovery). The installer mounts `system` and `product`, removes any previous copies, installs the APKs into `/product/{app,priv-app}`, drops the privapp permission XMLs, and installs the `addon.d` survival script so the apps persist across OTA updates.
+Flash the installer zip (`microg-ota-product-<x.y.z>.zip`) in a recovery (TWRP/LineageOS recovery). Instructions below with `adb`:
+
+**In case your device supports direct `sideload` reboot:
+1. Reboot to Sideload mode: `adb reboot sideload`.
+2. Pass the zip file to flash: `adb sideload microg-ota-product-<x.y.z>.zip`.
+3. Reboot system normally: `adb reboot`.
+
+**In case your device DOESN'T support direct `sideload` reboot:
+1. Reboot to Recovery mode: `adb reboot recovery`.
+2. Manually select "Apply update from ADB" (or "ADB sideload") to activate Sideload mode.
+3. Pass the zip file to flash: `adb sideload microg-ota-product-<x.y.z>.zip`.
+4. Reboot system normally: `adb reboot`.
+
+## What it does
+
+The APKs being installed are **GmsCore**, **GmsCompanion** and **GsfProxy**.
+
+The installer mounts `system` and `product`, removes any previous copies, installs the APKs into `/product/{app,priv-app}`, drops the `privapp` permission XMLs, and installs the `addon.d` survival script so the apps persist across OTA updates.
+
+Also, contrary to `microg-unofficial-installer`, this **does not** touch the `userdata` partition; in case you had a user installation of microG prior to this, you'd best uninstall it before flashing this.
 
 ### Native libraries (Cronet)
 
@@ -32,11 +89,12 @@ A ~3 MB margin is reserved for filesystem overhead. The `addon.d` restore path a
 
 ## Uninstalling
 
-Flash `microg-uninstall.zip`. It removes the microG apps, the two privapp permission XMLs and the addon.d survival script from both `product` and `system`.
+Download and flash `microg-uninstall.zip` just as described in the [Manual installation](#manual-installation).
+It removes the microG apps, the two privapp permission XMLs and the addon.d survival script from both `product` and `system`.
 
 ## Building from source
 
-For development or to roll your own build instead of using a release:
+For development or to roll your own build instead of using a release, clone or download this project, then:
 
 ```sh
 ./build-microg-ota.sh
@@ -51,11 +109,11 @@ The script:
 3. Stages them into `package/product/` and writes `version.env` — the tooling version (`pkgver`, from `git describe`) plus the bundled microG version (`mgver`/`mgverc`/`mgdate`), both shown in the installer banner.
 4. Zips the `package/` tree twice — `META-INF/`, `product/`, `system/` land at the archive root — writing `releases/microg-ota-product-<x.y.z>.zip` (`action.env=install`) and a lightweight `releases/microg-uninstall.zip` (`action.env=uninstall`, no payload).
 
-The package version (`x.y.z`) is owned by this repo, **not** microG: it comes from the latest `vX.Y.Z` git tag via `git describe` (untagged/dirty trees build as a `0.0.0-dev.<hash>` string). The bundled microG APK version is tracked and displayed separately. Pushing a `vX.Y.Z` tag builds and publishes a GitHub Release automatically (see `.github/workflows/release.yml`).
+The package version (`x.y.z`) is owned by this repo, **not** microG: it comes from the latest `vX.Y.Z` git tag via `git describe` (untagged/dirty trees build as a `0.0.0-dev.<hash>` string). The bundled microG APK version is tracked and displayed separately.
 
 ### GsfProxy
 
-microG no longer publishes GsfProxy (GmsCore provides GSF). If a legacy `microG/GsfProxy.apk` is present it is reused; otherwise GsfProxy is omitted and the installer skips it.
+microG no longer publishes `GsfProxy` (GmsCore provides GSF). If a legacy `microG/GsfProxy.apk` is present, it is reused; otherwise, `GsfProxy` is omitted and the installer skips it.
 
 ### Layout
 
@@ -71,4 +129,4 @@ Both zips are built from the same `package/` tree and the same `update-binary`. 
 
 The tooling and packaging scripts in this repository are licensed under the [MIT License](LICENSE).
 
-The APKs this package fetches and installs — **GmsCore** (`com.google.android.gms`) and **FakeStore** (`com.android.vending`) — are **not** part of this repository. They are built and published by the [microG project](https://github.com/microg/GmsCore), which is licensed under the [Apache License 2.0](https://github.com/microg/GmsCore/blob/master/LICENSE). All credit for microG itself goes to its authors and contributors; this project only repackages their official releases into a flashable form.
+The APKs this package fetches and installs — **GmsCore** (`com.google.android.gms`) and **GmsCompanion** (`com.android.vending`) — are **not** part of this repository. They are built and published by the [microG project](https://github.com/microg/GmsCore), which is licensed under the [Apache License 2.0](https://github.com/microg/GmsCore/blob/master/LICENSE). All credit for microG itself goes to its authors and contributors; this project only repackages their official releases into a flashable form.
