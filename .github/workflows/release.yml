@@ -20,17 +20,9 @@ jobs:
         with:
           fetch-depth: 0   # full history + tags so `git describe` resolves pkgver
 
-      # The AOSP permission DB (fetched per-API from android.googlesource.com) is
-      # expensive and flaky to rebuild; cache it across runs. Only the DB is
-      # cached, not the upstream tools, so upstream fixes are still picked up each
-      # build. Bump the key suffix to force a rebuild.
-      - name: Cache AOSP permission DB
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/microg-ota-install/perm-db
-          key: microg-permdb-v1
-
-      # curl, jq, zip, unzip are all preinstalled on ubuntu-latest.
+      # curl, jq, zip, unzip are all preinstalled on ubuntu-latest. The AOSP
+      # permission DB is vendored at tools/perm-db/, so the build is offline and
+      # never touches android.googlesource.com (which blocks CI runner IPs).
       - name: Build packages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # lifts GitHub API rate limits
