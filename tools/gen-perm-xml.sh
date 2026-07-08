@@ -156,11 +156,23 @@ log "aapt:     $AAPT_PATH"
 strip_cert_digest() { sed -i -E 's/ sha256-cert-digest="[^"]*"//' "$1"; }
 
 # --- ensure the AOSP permission database ----------------------------------
+# dl-perm-list.sh fetches one manifest per API level from android.googlesource.com
+# and aborts if any single fetch hiccups, leaving a PARTIAL perms/ dir behind. A
+# marker written only on full success guards against reusing an incomplete DB, and
+# we retry to ride out transient network failures (the CI symptom).
 export TOOLS_DATA_DIR="$PERMDB_DIR"
-if [ "$REFRESH" -eq 1 ] || [ ! -d "$PERMDB_DIR/perms" ]; then
+db_marker="$PERMDB_DIR/perms/.complete"
+if [ "$REFRESH" -eq 1 ] || [ ! -f "$db_marker" ]; then
 	log "Building AOSP permission database (this hits android.googlesource.com)..."
 	mkdir -p "$PERMDB_DIR"
-	sh "$DL_TOOL" || die "dl-perm-list.sh failed."
+	rm -f "$db_marker"
+	attempt=1; tries="${PERMDB_TRIES:-3}"
+	until sh "$DL_TOOL"; do
+		[ "$attempt" -lt "$tries" ] || die "dl-perm-list.sh failed after $tries attempts (android.googlesource.com unreachable?)."
+		warn "permission DB download failed (attempt $attempt/$tries); retrying in 5s..."
+		attempt=$((attempt + 1)); sleep 5
+	done
+	touch "$db_marker"
 else
 	log "Using cached permission database: $PERMDB_DIR/perms"
 fi
