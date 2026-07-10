@@ -7,11 +7,12 @@
 # GmsCore/GmsCompanion request or with how a given Android release classifies
 # each permission. Writes privapp-permissions-<pkg>.xml -> etc/permissions/.
 #
-# The allow-list is emitted digest-less (matched by package name only) -- the
-# form with a long track record on ROMs with ro.control_privapp_permissions=
-# enforce. default-permissions (dangerous-perm auto-grants -> etc/default-
-# permissions/) are an addition on top of that baseline and are only emitted
-# with --default-permissions.
+# The allow-list embeds the signing-cert sha256 digest by default
+# (sha256-cert-digest="..."), so the privileged grants bind to microG's signing
+# key, not merely the package name -- the more-hardened form upstream ships. Pass
+# --no-cert-digest to emit the digest-less (package-name-only) allow-list instead.
+# default-permissions (dangerous-perm auto-grants -> etc/default-permissions/) are
+# only emitted with --default-permissions.
 #
 # This wrapper (part of this repo, MIT-licensed) is a thin orchestrator around
 # two THIRD-PARTY tools authored by ale5000, DOWNLOADED at run time from the
@@ -28,16 +29,18 @@
 #     --def-dest DIR          default-permissions output dir
 #                             (default: package/product/etc/default-permissions/)
 #     --default-permissions   also emit default-permissions (off by default)
+#     --no-cert-digest        emit the digest-less (package-name-only) allow-list
+#                             (default: embed the signing-cert sha256 digest)
 #     --refresh               force re-download of the upstream tools AND the DB
 #
 # Env overrides:
 #   UPSTREAM_REPO   default: micro5k/microg-unofficial-installer
 #   UPSTREAM_REF    default: main   (pin to a tag/commit for reproducible builds)
-#   AAPT_PATH
+#   AAPT_PATH / APKSIGNER_PATH / KEYTOOL_PATH
 #
 # Requires: curl + aapt2/aapt (Android SDK build-tools). The upstream generator
-# also needs apksigner or keytool (auto-detected) to run, even though the digest
-# it produces is stripped from the output.
+# also needs apksigner or keytool (auto-detected) to run. By default this wrapper
+# uses them too to embed the digest; with --no-cert-digest the digest is stripped.
 # Caches live under ${XDG_CACHE_HOME:-~/.cache}/microg-ota-install/.
 
 set -euo pipefail
@@ -55,6 +58,10 @@ REFRESH=0
 # default-permissions (dangerous-perm auto-grants) are an addition on top of the
 # historical privapp-only baseline, so they're opt-in.
 WITH_DEFAULT_PERMS=0
+# Embed the signing-cert sha256 digest in the allow-list. ON by default: binds the
+# privileged grants to microG's signing key (the hardened form upstream ships).
+# --no-cert-digest falls back to the digest-less (package-name-only) allow-list.
+WITH_CERT_DIGEST=1
 
 # Upstream source of the vendored-at-runtime tools.
 UPSTREAM_REPO="${UPSTREAM_REPO:-micro5k/microg-unofficial-installer}"
@@ -74,6 +81,8 @@ while [ "$#" -gt 0 ]; do
 		--def-dest)             DEF_DEST_DIR="$2"; shift 2 ;;
 		--refresh)              REFRESH=1; shift ;;
 		--default-permissions)  WITH_DEFAULT_PERMS=1; shift ;;
+		--cert-digest)          WITH_CERT_DIGEST=1; shift ;;
+		--no-cert-digest)       WITH_CERT_DIGEST=0; shift ;;
 		-h|--help)              grep -E '^#( |$)' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 		-*)                     die "unknown option: $1" ;;
 		*)                      APKS+=("$1"); shift ;;
@@ -138,9 +147,8 @@ AAPT_PATH="${AAPT_PATH:-$(find_build_tool aapt2 || find_build_tool aapt || true)
 export AAPT_PATH
 
 # The upstream generator needs apksigner or keytool to compute the digest it
-# embeds (which we strip afterwards). keytool is almost always on PATH; to also
-# let it find apksigner, point ANDROID_SDK_ROOT at the SDK we found aapt in when
-# the caller hasn't already set one.
+# embeds. keytool is almost always on PATH; to also let it find apksigner, point
+# ANDROID_SDK_ROOT at the SDK we found aapt in when the caller hasn't set one.
 if [ -z "${ANDROID_SDK_ROOT:-}" ] && [ -z "${ANDROID_HOME:-}" ]; then
 	case "$AAPT_PATH" in
 		*/build-tools/*) export ANDROID_SDK_ROOT="${AAPT_PATH%/build-tools/*}" ;;
@@ -149,42 +157,76 @@ fi
 
 log "aapt:     $AAPT_PATH"
 
-# The upstream generator embeds a sha256-cert-digest on each entry. We strip it:
-# the allow-list then matches by package name only, which is the form that has a
-# long track record on ROMs with ro.control_privapp_permissions=enforce (a digest
-# the platform won't accept makes it reject the whole list and bootloop). $1 = XML.
-strip_cert_digest() { sed -i -E 's/ sha256-cert-digest="[^"]*"//' "$1"; }
+# By default we need apksigner or keytool to compute the digest we embed.
+if [ "$WITH_CERT_DIGEST" -eq 1 ]; then
+	if [ -n "${APKSIGNER_PATH:-}" ]; then
+		export APKSIGNER_PATH
+	elif p="$(find_build_tool apksigner 2>/dev/null)"; then
+		export APKSIGNER_PATH="$p"
+	elif p="$(command -v keytool 2>/dev/null)"; then
+		export KEYTOOL_PATH="$p"
+	else
+		die "neither apksigner nor keytool found (needed for --cert-digest)."
+	fi
+	log "cert via: ${APKSIGNER_PATH:-$KEYTOOL_PATH}"
+fi
+
+# Compute an APK's signing-cert SHA-256 digest as upper-case colon-separated hex.
+# Recomputed here rather than trusting the upstream generator's embedded value,
+# because some apksigner builds print an extra-colon line -- "V2 Signer:
+# certificate SHA-256 digest: <hex>" -- that its `cut -d :` mis-splits, leaking
+# the label into the attribute. Taking the hex after the LAST "digest:" is robust.
+cert_digest() {
+	local raw
+	if [ -n "${APKSIGNER_PATH:-}" ]; then
+		raw="$("$APKSIGNER_PATH" verify --print-certs --min-sdk-version 24 -- "$1" 2>/dev/null \
+			| grep -im1 'certificate SHA-256 digest:' | sed -E 's/.*digest:[[:space:]]*//')"
+	else
+		raw="$("$KEYTOOL_PATH" -printcert -jarfile "$1" 2>/dev/null \
+			| grep -im1 'SHA256:' | sed -E 's/.*SHA256:[[:space:]]*//')"
+	fi
+	raw="$(printf '%s' "$raw" | tr -d '[:space:]:' | tr 'a-f' 'A-F')"
+	[ "${#raw}" -eq 64 ] || return 1
+	printf '%s' "$raw" | sed 's/../&:/g; s/:$//'
+}
+
+# The upstream generator always embeds a sha256-cert-digest. Either overwrite it
+# with our robustly-computed value (default) or strip it so the allow-list matches
+# by package name only (--no-cert-digest).
+# $1 = generated XML, $2 = APK.
+normalize_cert_digest() {
+	if [ "$WITH_CERT_DIGEST" -eq 1 ]; then
+		local digest
+		if digest="$(cert_digest "$2")"; then
+			sed -i -E "s/(sha256-cert-digest=\")[^\"]*(\")/\1$digest\2/" "$1"
+		else
+			warn "could not compute cert digest for $(basename "$2"); leaving the generator's value."
+		fi
+	else
+		sed -i -E 's/ sha256-cert-digest="[^"]*"//' "$1"
+	fi
+}
 
 # --- ensure the AOSP permission database ----------------------------------
-# Prefer the DB committed at tools/perm-db/ (vendored reference data): it makes
-# builds offline and deterministic and, crucially, avoids android.googlesource.com
-# which rate-limits/blocks CI runner IPs. Only when it's absent (or on --refresh
-# to regenerate it) do we fall back to downloading -- dl-perm-list.sh fetches one
-# manifest per API level and aborts on any single hiccup, leaving a PARTIAL perms/
-# behind, so a .complete marker guards reuse and we retry transient failures.
-# To update the committed DB: run with --refresh, then copy
-#   "$PERMDB_DIR/perms/" -> tools/perm-db/perms/ .
-REPO_DB="$REPO_ROOT/tools/perm-db"
-if [ "$REFRESH" -ne 1 ] && [ -f "$REPO_DB/perms/.complete" ]; then
-	log "Using committed AOSP permission database: $REPO_DB/perms"
-	export TOOLS_DATA_DIR="$REPO_DB"
+# dl-perm-list.sh fetches one manifest per API level from android.googlesource.com
+# and aborts if any single fetch hiccups, leaving a PARTIAL perms/ dir behind. A
+# marker written only on full success guards against reusing an incomplete DB, and
+# we retry to ride out transient network failures (the CI symptom).
+export TOOLS_DATA_DIR="$PERMDB_DIR"
+db_marker="$PERMDB_DIR/perms/.complete"
+if [ "$REFRESH" -eq 1 ] || [ ! -f "$db_marker" ]; then
+	log "Building AOSP permission database (this hits android.googlesource.com)..."
+	mkdir -p "$PERMDB_DIR"
+	rm -f "$db_marker"
+	attempt=1; tries="${PERMDB_TRIES:-3}"
+	until sh "$DL_TOOL"; do
+		[ "$attempt" -lt "$tries" ] || die "dl-perm-list.sh failed after $tries attempts (android.googlesource.com unreachable?)."
+		warn "permission DB download failed (attempt $attempt/$tries); retrying in 5s..."
+		attempt=$((attempt + 1)); sleep 5
+	done
+	touch "$db_marker"
 else
-	export TOOLS_DATA_DIR="$PERMDB_DIR"
-	db_marker="$PERMDB_DIR/perms/.complete"
-	if [ "$REFRESH" -eq 1 ] || [ ! -f "$db_marker" ]; then
-		log "Building AOSP permission database (this hits android.googlesource.com)..."
-		mkdir -p "$PERMDB_DIR"
-		rm -f "$db_marker"
-		attempt=1; tries="${PERMDB_TRIES:-3}"
-		until sh "$DL_TOOL"; do
-			[ "$attempt" -lt "$tries" ] || die "dl-perm-list.sh failed after $tries attempts (android.googlesource.com unreachable?)."
-			warn "permission DB download failed (attempt $attempt/$tries); retrying in 5s..."
-			attempt=$((attempt + 1)); sleep 5
-		done
-		touch "$db_marker"
-	else
-		log "Using cached permission database: $PERMDB_DIR/perms"
-	fi
+	log "Using cached permission database: $PERMDB_DIR/perms"
 fi
 
 # --- generate, strip the cert digest, install under canonical names -------
@@ -213,7 +255,7 @@ for apk in "${APKS[@]}"; do
 	priv="$(find "$WORK/output" -name 'privapp-permissions-*.xml' | head -n1)"
 	if [ -n "$priv" ]; then
 		pkg="$(pkg_of "$priv")"
-		strip_cert_digest "$priv"
+		normalize_cert_digest "$priv" "$apk_abs"
 		cp -f "$priv" "$DEST_DIR/privapp-permissions-$pkg.xml"
 		log "  privapp:  $DEST_DIR/privapp-permissions-$pkg.xml"
 	else
@@ -225,7 +267,7 @@ for apk in "${APKS[@]}"; do
 		def="$(find "$WORK/output" -name 'default-permissions-*.xml' | head -n1)"
 		if [ -n "$def" ]; then
 			pkg="$(pkg_of "$def")"
-			strip_cert_digest "$def"
+			normalize_cert_digest "$def" "$apk_abs"
 			cp -f "$def" "$DEF_DEST_DIR/default-permissions-$pkg.xml"
 			log "  default:  $DEF_DEST_DIR/default-permissions-$pkg.xml"
 		fi

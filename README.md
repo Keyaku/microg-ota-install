@@ -121,18 +121,19 @@ A hand-maintained list rots over time as microG adds/removes a requested permiss
 
 The generation logic itself is **downloaded from upstream at build time** (not vendored) so upstream fixes are picked up automatically; see [Credits & licensing](#credits--licensing) and [`tools/THIRD_PARTY.md`](tools/THIRD_PARTY.md). The upstream tools and the AOSP database are cached under `${XDG_CACHE_HOME:-~/.cache}/microg-ota-install/`.
 
-The allow-list is emitted **digest-less** (matched by package name only, no `sha256-cert-digest`), the form with a long track record on ROMs with `ro.control_privapp_permissions=enforce`. The generator can also emit `default-permissions` (auto-grants for dangerous runtime perms), but that's opt-in via `--default-permissions` and off by default.
+The allow-list embeds each app's **signing-cert digest** (`sha256-cert-digest`), so the privileged grants bind to microG's signing key rather than the package name alone — the hardened form upstream ships, validated on an `ro.control_privapp_permissions=enforce` device. Pass `--no-cert-digest` for the digest-less (package-name-only) form. The generator can also emit `default-permissions` (auto-grants for dangerous runtime perms), but that's opt-in via `--default-permissions` and off by default.
 
 You can also run it standalone:
 
 ```sh
 tools/gen-perm-xml.sh path/to/GmsCore.apk path/to/GmsCompanion.apk
 #   --default-permissions     also emit default-permissions (off by default)
+#   --no-cert-digest          emit the digest-less (package-name-only) allow-list
 #   --refresh                 re-download the upstream tools and rebuild the DB
 #   UPSTREAM_REF=<tag/commit> pin the upstream tool version (default: main)
 ```
 
-Requirements: `curl` + `aapt2`/`aapt` (Android SDK build-tools). The upstream generator also needs `apksigner` or `keytool` (auto-detected) to run, even though the digest it produces is stripped from the output.
+Requirements: `curl` + `aapt2`/`aapt` (Android SDK build-tools). The upstream generator also needs `apksigner` or `keytool` (auto-detected) to compute the signing-cert digest embedded in the allow-list (`--no-cert-digest` strips it).
 
 ### GsfProxy
 
