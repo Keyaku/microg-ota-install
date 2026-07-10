@@ -3,8 +3,9 @@
 # build-microg-ota.sh
 #
 # 1. Fetches the latest microG builds (GmsCore, FakeStore) from the official
-#    microg/GmsCore GitHub releases.
-# 2. Downloads them into ./microG/ (original asset names kept).
+#    microg/GmsCore GitHub releases (and optionally GsfProxy from microg/GsfProxy).
+# 2. Downloads them into the cache dir (default:
+#    $XDG_CACHE_HOME/microg-ota-install/apks), reusing them across runs.
 # 3. Stages them into the flashable package's product/ tree, writes a
 #    version.env (sourced by update-binary) from the fetched versions.
 # 4. Zips the package contents (META-INF/ etc. at the archive root) and moves
@@ -12,30 +13,71 @@
 #
 # Requires: curl, jq, zip, unzip.
 #
-# Env toggles:
-#   WITH_GSFPROXY=1      also bundle GsfProxy (from its own microg/GsfProxy
-#                        release). Off by default -- GmsCore provides GSF and
-#                        upstream deems GsfProxy unnecessary; released zips do
-#                        not include it.
-#   SKIP_PERM_XML=1      reuse pre-existing permission XMLs instead of generating.
+# Usage: build-microg-ota.sh [options]
+#   --with-gsfproxy      also bundle GsfProxy (from microg/GsfProxy). Off by
+#                        default -- GmsCore provides GSF and upstream deems it
+#                        unnecessary, so released zips omit it.
+#   --skip-perm-xml      reuse pre-existing permission XMLs instead of generating.
+#   --no-cert-digest     build a digest-less allow-list (forwarded to
+#                        gen-perm-xml.sh; the default embeds the signing-cert
+#                        digest).
+#   --cache DIR          cache root for the downloaded APKs and the permission
+#                        DB (default: $XDG_CACHE_HOME/microg-ota-install).
+#   -h, --help           show this help and exit.
+#
+# Each flag has an env fallback (the flag wins when both are set):
+#   WITH_GSFPROXY=1  SKIP_PERM_XML=1  NO_CERT_DIGEST=1  MICROG_OTA_CACHE=DIR
+# GITHUB_TOKEN lifts the GitHub API rate limits.
 
 set -euo pipefail
 
 # --- paths ----------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # repo root
 PKG_DIR="$SCRIPT_DIR/package"
-MICROG_DIR="$SCRIPT_DIR/microG"
 RELEASES_DIR="$SCRIPT_DIR/releases"
 
 GH_REPO="microg/GmsCore"
 GH_API="https://api.github.com/repos/$GH_REPO/releases/latest"
 
 # GsfProxy ships from its own repo/release (a single GsfProxy.apk asset), not
-# from the GmsCore release. Opt-in only (WITH_GSFPROXY=1); GmsCore provides GSF
-# and upstream considers GsfProxy unnecessary, so it is off by default.
+# from the GmsCore release. Opt-in only; GmsCore provides GSF and upstream
+# considers GsfProxy unnecessary, so it is off by default.
 GSF_REPO="microg/GsfProxy"
 GSF_API="https://api.github.com/repos/$GSF_REPO/releases/latest"
+
+# --- options (env fallback; CLI flags below override) ---------------------
 WITH_GSFPROXY="${WITH_GSFPROXY:-0}"
+SKIP_PERM_XML="${SKIP_PERM_XML:-0}"
+NO_CERT_DIGEST="${NO_CERT_DIGEST:-0}"
+
+# Cache root resolution: an explicit override wins; else XDG_CACHE_HOME; else
+# ~/.cache only if it already exists (never create it); else a repo-local .cache/.
+if [ -n "${MICROG_OTA_CACHE:-}" ]; then
+	CACHE_DIR="$MICROG_OTA_CACHE"
+elif [ -n "${XDG_CACHE_HOME:-}" ]; then
+	CACHE_DIR="$XDG_CACHE_HOME/microg-ota-install"
+elif [ -d "$HOME/.cache" ]; then
+	CACHE_DIR="$HOME/.cache/microg-ota-install"
+else
+	CACHE_DIR="$SCRIPT_DIR/.cache/microg-ota-install"
+fi
+
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--with-gsfproxy)  WITH_GSFPROXY=1; shift ;;
+		--skip-perm-xml)  SKIP_PERM_XML=1; shift ;;
+		--no-cert-digest) NO_CERT_DIGEST=1; shift ;;
+		--cache)          CACHE_DIR="${2:?--cache needs a directory}"; shift 2 ;;
+		-h|--help)        sed -n '2,/^set -euo pipefail/p' "$0" | grep -E '^#' | sed 's/^# \{0,1\}//'; exit 0 ;;
+		-*)               echo "ERROR: unknown option: $1 (see --help)" >&2; exit 1 ;;
+		*)                echo "ERROR: unexpected argument: $1 (see --help)" >&2; exit 1 ;;
+	esac
+done
+
+# Downloaded APKs live under the cache root; share that root with gen-perm-xml.sh
+# (which caches the upstream tools and the AOSP permission DB) via MICROG_OTA_CACHE.
+MICROG_DIR="$CACHE_DIR/apks"
+export MICROG_OTA_CACHE="$CACHE_DIR"
 
 # --- deps -----------------------------------------------------------------
 for bin in curl jq zip unzip; do
@@ -104,7 +146,7 @@ if [ "$WITH_GSFPROXY" = 1 ]; then
 	echo "   GsfProxy: $name ($ts)"
 fi
 
-# --- download into system/microG/ ----------------------------------------
+# --- download into the cache dir ------------------------------------------
 download() {
 	# $1 = url, $2 = dest, $3 = release timestamp (ISO-8601)
 	if [ ! -f "$2" ]; then
@@ -152,17 +194,19 @@ fi
 # from the exact APKs being shipped, so the grants stay in lockstep with what
 # the APKs request and how current Android releases classify each permission
 # (see tools/gen-perm-xml.sh). This is a required build step;
-# it needs aapt2/aapt + apksigner/keytool. Set SKIP_PERM_XML=1 only if you have
+# it needs aapt2/aapt + apksigner/keytool. Use --skip-perm-xml only if you have
 # placed the XMLs under package/product/etc/{permissions,default-permissions}/
 # yourself.
-if [ "${SKIP_PERM_XML:-0}" != 1 ]; then
+if [ "$SKIP_PERM_XML" != 1 ]; then
 	echo ">> Generating permission XMLs from the staged APKs ..."
-	"$SCRIPT_DIR/tools/gen-perm-xml.sh" \
+	gen_args=()
+	[ "$NO_CERT_DIGEST" = 1 ] && gen_args+=(--no-cert-digest)
+	"$SCRIPT_DIR/tools/gen-perm-xml.sh" "${gen_args[@]}" \
 		"$MICROG_DIR/${ASSET_NAME[gms]}" \
 		"$MICROG_DIR/${ASSET_NAME[store]}" \
 		|| { echo "ERROR: permission XML generation failed; refusing to build an incomplete package." >&2; exit 1; }
 else
-	echo ">> Skipping permission XML generation (SKIP_PERM_XML=1); using pre-existing XMLs"
+	echo ">> Skipping permission XML generation (--skip-perm-xml); using pre-existing XMLs"
 fi
 
 # --- write version.env (sourced by update-binary) -------------------------

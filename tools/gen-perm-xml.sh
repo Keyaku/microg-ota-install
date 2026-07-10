@@ -41,14 +41,25 @@
 # Requires: curl + aapt2/aapt (Android SDK build-tools). The upstream generator
 # also needs apksigner or keytool (auto-detected) to run. By default this wrapper
 # uses them too to embed the digest; with --no-cert-digest the digest is stripped.
-# Caches live under ${XDG_CACHE_HOME:-~/.cache}/microg-ota-install/.
+# Caches live under $MICROG_OTA_CACHE (default ${XDG_CACHE_HOME:-~/.cache}/microg-ota-install/).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-CACHE_BASE="${XDG_CACHE_HOME:-$HOME/.cache}/microg-ota-install"
+# Cache root: explicit override (shared with build-microg-ota.sh) wins; else
+# XDG_CACHE_HOME; else ~/.cache only if it already exists (never create it); else
+# a repo-local .cache/.
+if [ -n "${MICROG_OTA_CACHE:-}" ]; then
+	CACHE_BASE="$MICROG_OTA_CACHE"
+elif [ -n "${XDG_CACHE_HOME:-}" ]; then
+	CACHE_BASE="$XDG_CACHE_HOME/microg-ota-install"
+elif [ -d "$HOME/.cache" ]; then
+	CACHE_BASE="$HOME/.cache/microg-ota-install"
+else
+	CACHE_BASE="$REPO_ROOT/.cache/microg-ota-install"
+fi
 TOOLS_CACHE="$CACHE_BASE/upstream-tools"
 PERMDB_DIR="$CACHE_BASE/perm-db"
 

@@ -13,8 +13,8 @@ package/action.env
 package/**/*.xml
 package/**/*.xml
 
-# Downloaded microG payloads land here
-microG/
+# Repo-local cache fallback (used only when no XDG/~/.cache is available)
+.cache/
 
 # OS / editor cruft
 .DS_Store

@@ -101,14 +101,23 @@ For development or to roll your own build instead of using a release, clone or d
 ./build-microg-ota.sh
 ```
 
-Optional: set `GITHUB_TOKEN` to avoid GitHub API rate limits.
+Options (each has an env fallback; the flag wins when both are given):
+
+| Flag | Env | Effect |
+| --- | --- | --- |
+| `--with-gsfproxy` | `WITH_GSFPROXY=1` | also bundle GsfProxy (off by default; see [GsfProxy](#gsfproxy)) |
+| `--skip-perm-xml` | `SKIP_PERM_XML=1` | reuse pre-existing permission XMLs instead of generating them |
+| `--no-cert-digest` | `NO_CERT_DIGEST=1` | build a digest-less allow-list (default embeds the signing-cert digest) |
+| `--cache DIR` | `MICROG_OTA_CACHE=DIR` | cache root for downloaded APKs and the permission DB |
+
+Set `GITHUB_TOKEN` to avoid GitHub API rate limits. Downloaded APKs and the AOSP permission DB are cached under `$XDG_CACHE_HOME/microg-ota-install` (falling back to `~/.cache` when it exists, otherwise a repo-local `.cache/`), reused across runs; `--cache`/`MICROG_OTA_CACHE` overrides the root.
 
 The script:
 
 1. Queries the latest `microg/GmsCore` GitHub release.
-2. Downloads GmsCore (`com.google.android.gms`) and GmsCompanion (`com.android.vending`) into `microG/`.
+2. Downloads GmsCore (`com.google.android.gms`) and GmsCompanion (`com.android.vending`) into the cache dir.
 3. Stages them into `package/product/` and writes `version.env` — the tooling version (`pkgver`, from `git describe`) plus the bundled microG version (`mgver`/`mgverc`/`mgdate`), both shown in the installer banner.
-4. Generates the `privapp-permissions` XMLs from the staged APKs (see [Permission XMLs](#permission-xmls) below). These are **not** committed, making this a required build step; it aborts if generation fails (bypass with `SKIP_PERM_XML=1` only if you placed the XMLs yourself).
+4. Generates the `privapp-permissions` XMLs from the staged APKs (see [Permission XMLs](#permission-xmls) below). These are **not** committed, making this a required build step; it aborts if generation fails (bypass with `--skip-perm-xml` only if you placed the XMLs yourself).
 5. Zips the `package/` tree twice (`META-INF/`, `product/`, `system/` land at the archive root) writing `releases/microg-ota-product-<x.y.z>.zip` (`action.env=install`) and a lightweight `releases/microg-uninstall.zip` (`action.env=uninstall`, no payload).
 
 The package version (`x.y.z`) is owned by this repo, **not** microG: it comes from the latest `vX.Y.Z` git tag via `git describe` (untagged/dirty trees build as a `0.0.0-dev.<hash>` string). The bundled microG APK version is tracked and displayed separately.
@@ -137,10 +146,10 @@ Requirements: `curl` + `aapt2`/`aapt` (Android SDK build-tools). The upstream ge
 
 ### GsfProxy
 
-`GsfProxy` ships from its own repository, [`microg/GsfProxy`](https://github.com/microg/GsfProxy/releases/latest) (a single `GsfProxy.apk` asset), separate from the GmsCore release. It is **opt-in and off by default**: GmsCore provides GSF, and upstream considers `GsfProxy` unnecessary (it is also an old, low-`targetSdk` APK). Released zips do not include it. To bundle it in a local/manual build, set `WITH_GSFPROXY=1`:
+`GsfProxy` ships from its own repository, [`microg/GsfProxy`](https://github.com/microg/GsfProxy/releases/latest) (a single `GsfProxy.apk` asset), separate from the GmsCore release. It is **opt-in and off by default**: GmsCore provides GSF, and upstream considers `GsfProxy` unnecessary (it is also an old, low-`targetSdk` APK). Released zips do not include it. To bundle it in a local/manual build, pass `--with-gsfproxy` (or set `WITH_GSFPROXY=1`):
 
 ```sh
-WITH_GSFPROXY=1 ./build-microg-ota.sh
+./build-microg-ota.sh --with-gsfproxy
 ```
 
 ### Layout
