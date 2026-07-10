@@ -4,10 +4,10 @@ Flashable (recovery / addon.d) package that installs a minimal microG stack into
 
 ## About this project
 
-There exist a few microG flash installers, some more rudmentary than others, with the most recommended one being [microg-unofficial-installer](https://github.com/micro5k/microg-unofficial-installer), created by one of the official maintainers of microG [@ale5000-git](https://github.com/ale5000-git). Their project is strongly more robust than this; in no way does this serve as a direct replace, rather an alternative that, instead of flashing to the `/system` partition, it writes to `/product` due to the possibility of `/system` not having enough storage for a minimal microG installation (for instance: the Google Pixel 9).
+There exist a few microG flash installers, some more rudmentary than others, with the most recommended one being [microg-unofficial-installer](https://github.com/micro5k/microg-unofficial-installer), created by one of the official maintainers of microG [@ale5000-git](https://github.com/ale5000-git). Their project is strongly more robust than this; in no way does this serve as a direct replacement, but rather an alternative that, instead of flashing to the `/system` partition, it writes to `/product` due to the possibility of `/system` not having enough storage for a minimal microG installation (for instance: the Google Pixel 9).
 Using `/product` instead is the next approach to conform to Android's [Shared system image](https://source.android.com/docs/core/architecture/partitions/shared-system-image) mechanisms.
 
-In short: Until `microg-unofficial-installer` offers the possibility to install microG to `/product`, this is the better approach with the bare minimum codebase to achieve it.
+In short: Until `microg-unofficial-installer` offers the possibility to install microG to `/product` (and has the option to _not touch_ the userdata partition post-encryption), this is the better approach with the bare minimum codebase to achieve it.
 
 ## Automatic installation
 
