@@ -67,7 +67,7 @@ Your device should reboot automatically. In case it doesn't, just reboot to syst
 
 ## What it does
 
-The APKs being installed are **GmsCore**, **GmsCompanion** and **GsfProxy**.
+The APKs being installed are **GmsCore** and **GmsCompanion**. **GsfProxy** is optional and off by default (see [GsfProxy](#gsfproxy)).
 
 The installer mounts `system` and `product`, removes any previous copies, installs the APKs into `/product/{app,priv-app}`, drops the `privapp-permissions` XMLs (and `default-permissions` too, if the build was run with them enabled), and installs the `addon.d` survival script so the apps persist across OTA updates.
 
@@ -137,7 +137,11 @@ Requirements: `curl` + `aapt2`/`aapt` (Android SDK build-tools). The upstream ge
 
 ### GsfProxy
 
-microG no longer publishes `GsfProxy` (GmsCore provides GSF). If a legacy `microG/GsfProxy.apk` is present, it is reused; otherwise, `GsfProxy` is omitted and the installer skips it.
+`GsfProxy` ships from its own repository, [`microg/GsfProxy`](https://github.com/microg/GsfProxy/releases/latest) (a single `GsfProxy.apk` asset), separate from the GmsCore release. It is **opt-in and off by default**: GmsCore provides GSF, and upstream considers `GsfProxy` unnecessary (it is also an old, low-`targetSdk` APK). Released zips do not include it. To bundle it in a local/manual build, set `WITH_GSFPROXY=1`:
+
+```sh
+WITH_GSFPROXY=1 ./build-microg-ota.sh
+```
 
 ### Layout
 

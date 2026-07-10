@@ -11,6 +11,13 @@
 #    the result into ./releases/.
 #
 # Requires: curl, jq, zip, unzip.
+#
+# Env toggles:
+#   WITH_GSFPROXY=1      also bundle GsfProxy (from its own microg/GsfProxy
+#                        release). Off by default -- GmsCore provides GSF and
+#                        upstream deems GsfProxy unnecessary; released zips do
+#                        not include it.
+#   SKIP_PERM_XML=1      reuse pre-existing permission XMLs instead of generating.
 
 set -euo pipefail
 
@@ -22,6 +29,13 @@ RELEASES_DIR="$SCRIPT_DIR/releases"
 
 GH_REPO="microg/GmsCore"
 GH_API="https://api.github.com/repos/$GH_REPO/releases/latest"
+
+# GsfProxy ships from its own repo/release (a single GsfProxy.apk asset), not
+# from the GmsCore release. Opt-in only (WITH_GSFPROXY=1); GmsCore provides GSF
+# and upstream considers GsfProxy unnecessary, so it is off by default.
+GSF_REPO="microg/GsfProxy"
+GSF_API="https://api.github.com/repos/$GSF_REPO/releases/latest"
+WITH_GSFPROXY="${WITH_GSFPROXY:-0}"
 
 # --- deps -----------------------------------------------------------------
 for bin in curl jq zip unzip; do
@@ -74,6 +88,22 @@ for key in gms store; do
 	echo "   $prefix: $name ($ts)"
 done
 
+# GsfProxy from its own release (opt-in). One fixed asset name (GsfProxy.apk); the
+# repo is effectively frozen (last tag v0.1.0), but query the latest release so a
+# future republish is picked up automatically. Only fetched when WITH_GSFPROXY=1.
+if [ "$WITH_GSFPROXY" = 1 ]; then
+	echo ">> Querying latest release of $GSF_REPO ..."
+	gsf_meta="$(curl -fsSL "${CURL_AUTH[@]}" -H "Accept: application/vnd.github+json" "$GSF_API")" \
+		|| { echo "ERROR: could not query $GSF_REPO" >&2; exit 1; }
+	gsf_line="$(printf '%s' "$gsf_meta" | jq -r '
+		[.assets[] | select(.name == "GsfProxy.apk")] | last
+		| if . == null then "" else "\(.name)\t\(.browser_download_url)\t\(.created_at)" end')"
+	[ -n "$gsf_line" ] || { echo "ERROR: no GsfProxy.apk asset in $GSF_REPO latest release" >&2; exit 1; }
+	IFS=$'\t' read -r name url ts <<<"$gsf_line"
+	ASSET_NAME[gsf]="$name"; ASSET_URL[gsf]="$url"; ASSET_TS[gsf]="$ts"
+	echo "   GsfProxy: $name ($ts)"
+fi
+
 # --- download into system/microG/ ----------------------------------------
 download() {
 	# $1 = url, $2 = dest, $3 = release timestamp (ISO-8601)
@@ -89,7 +119,9 @@ download() {
 }
 
 echo ">> Downloading APKs into $MICROG_DIR ..."
-for key in gms store; do
+dl_keys=(gms store)
+[ "$WITH_GSFPROXY" = 1 ] && dl_keys+=(gsf)
+for key in "${dl_keys[@]}"; do
 	download "${ASSET_URL[$key]}" "$MICROG_DIR/${ASSET_NAME[$key]}" "${ASSET_TS[$key]}"
 done
 
@@ -105,15 +137,14 @@ install_apk() {
 install_apk "$MICROG_DIR/${ASSET_NAME[gms]}"   "$PKG_DIR/product/priv-app/GmsCore/GmsCore.apk"
 install_apk "$MICROG_DIR/${ASSET_NAME[store]}" "$PKG_DIR/product/priv-app/GmsCompanion/GmsCompanion.apk"
 
-# GsfProxy is no longer published by microG (GmsCore now provides GSF). Reuse a
-# legacy GsfProxy.apk if one is sitting in system/microG/, otherwise drop it
-# from the package so the installer does not try to flash a missing payload.
-if [ -f "$MICROG_DIR/GsfProxy.apk" ]; then
-	install_apk "$MICROG_DIR/GsfProxy.apk" "$PKG_DIR/product/app/GsfProxy/GsfProxy.apk"
-	echo "   GsfProxy: legacy $MICROG_DIR/GsfProxy.apk"
+# GsfProxy (opt-in; when off, clear any GsfProxy left in the package tree from a
+# previous WITH_GSFPROXY=1 build so it doesn't linger in the zip).
+if [ "$WITH_GSFPROXY" = 1 ]; then
+	install_apk "$MICROG_DIR/${ASSET_NAME[gsf]}" "$PKG_DIR/product/app/GsfProxy/GsfProxy.apk"
+	echo "   GsfProxy: ${ASSET_NAME[gsf]}"
 else
 	rm -rf "$PKG_DIR/product/app/GsfProxy"
-	echo "   GsfProxy: none available, omitting"
+	echo "   GsfProxy: omitted (set WITH_GSFPROXY=1 to bundle)"
 fi
 
 # --- generate permission XMLs from the staged APKs ------------------------
