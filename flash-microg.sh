@@ -28,7 +28,9 @@ REPO="Keyaku/microg-ota-install"
 API_URL="https://api.github.com/repos/$REPO/releases/latest"
 # Release asset we want: the version-stamped installer (not the uninstaller).
 ASSET_RE='microg-ota-product-[^"]*\.zip'
-CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/microg-ota-install"
+# Downloaded release zips are cached under a downloads/ subdir, alongside (but
+# separate from) the build tool's apks/ and perm-db/ caches.
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/microg-ota-install/downloads"
 
 # How long to wait (seconds) for a device to enter a given adb state. These are
 # overridable from the environment, so a slower device can bump them without

@@ -13,21 +13,8 @@
 #
 # Requires: curl, jq, zip, unzip.
 #
-# Usage: build-microg-ota.sh [options]
-#   --with-gsfproxy      also bundle GsfProxy (from microg/GsfProxy). Off by
-#                        default -- GmsCore provides GSF and upstream deems it
-#                        unnecessary, so released zips omit it.
-#   --skip-perm-xml      reuse pre-existing permission XMLs instead of generating.
-#   --no-cert-digest     build a digest-less allow-list (forwarded to
-#                        gen-perm-xml.sh; the default embeds the signing-cert
-#                        digest).
-#   --cache DIR          cache root for the downloaded APKs and the permission
-#                        DB (default: $XDG_CACHE_HOME/microg-ota-install).
-#   -h, --help           show this help and exit.
-#
-# Each flag has an env fallback (the flag wins when both are set):
-#   WITH_GSFPROXY=1  SKIP_PERM_XML=1  NO_CERT_DIGEST=1  MICROG_OTA_CACHE=DIR
-# GITHUB_TOKEN lifts the GitHub API rate limits.
+# Run with --help for the options (also settable via env: WITH_GSFPROXY,
+# SKIP_PERM_XML, NO_CERT_DIGEST, MICROG_OTA_CACHE; GITHUB_TOKEN for the API).
 
 set -euo pipefail
 
@@ -44,6 +31,28 @@ GH_API="https://api.github.com/repos/$GH_REPO/releases/latest"
 # considers GsfProxy unnecessary, so it is off by default.
 GSF_REPO="microg/GsfProxy"
 GSF_API="https://api.github.com/repos/$GSF_REPO/releases/latest"
+
+usage() {
+	cat <<-'EOF'
+		Usage: build-microg-ota.sh [options]
+
+		Builds the flashable microG OTA package from the latest microG releases.
+
+		Options (each has an env fallback; the flag wins when both are set):
+		  --with-gsfproxy      also bundle GsfProxy (env: WITH_GSFPROXY=1). Off by
+		                       default -- GmsCore provides GSF, so released zips omit it.
+		  --skip-perm-xml      reuse pre-existing permission XMLs (env: SKIP_PERM_XML=1).
+		  --no-cert-digest     build a digest-less allow-list (env: NO_CERT_DIGEST=1);
+		                       the default embeds the signing-cert digest.
+		  --cache DIR          cache root for downloaded APKs and the permission DB
+		                       (env: MICROG_OTA_CACHE). Default:
+		                       $XDG_CACHE_HOME/microg-ota-install, falling back to
+		                       ~/.cache (when it exists) or a repo-local .cache/.
+		  -h, --help           show this help and exit.
+
+		GITHUB_TOKEN lifts the GitHub API rate limits.
+	EOF
+}
 
 # --- options (env fallback; CLI flags below override) ---------------------
 WITH_GSFPROXY="${WITH_GSFPROXY:-0}"
@@ -68,7 +77,7 @@ while [ "$#" -gt 0 ]; do
 		--skip-perm-xml)  SKIP_PERM_XML=1; shift ;;
 		--no-cert-digest) NO_CERT_DIGEST=1; shift ;;
 		--cache)          CACHE_DIR="${2:?--cache needs a directory}"; shift 2 ;;
-		-h|--help)        sed -n '2,/^set -euo pipefail/p' "$0" | grep -E '^#' | sed 's/^# \{0,1\}//'; exit 0 ;;
+		-h|--help)        usage; exit 0 ;;
 		-*)               echo "ERROR: unknown option: $1 (see --help)" >&2; exit 1 ;;
 		*)                echo "ERROR: unexpected argument: $1 (see --help)" >&2; exit 1 ;;
 	esac
