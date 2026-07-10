@@ -7,7 +7,7 @@ Flashable (recovery / addon.d) package that installs a minimal microG stack into
 There exist a few microG flash installers, some more rudmentary than others, with the most recommended one being [microg-unofficial-installer](https://github.com/micro5k/microg-unofficial-installer), created by one of the official maintainers of microG [@ale5000-git](https://github.com/ale5000-git). Their project is strongly more robust than this; in no way does this serve as a direct replace, rather an alternative that, instead of flashing to the `/system` partition, it writes to `/product` due to the possibility of `/system` not having enough storage for a minimal microG installation (for instance: the Google Pixel 9).
 Using `/product` instead is the next approach to conform to Android's [Shared system image](https://source.android.com/docs/core/architecture/partitions/shared-system-image) mechanisms.
 
-In short: Until `microg-unofficial-installer` offers the possibility to install microG to `/product`, this is the better approach with the bare minimnum codebase to achieve it.
+In short: Until `microg-unofficial-installer` offers the possibility to install microG to `/product`, this is the better approach with the bare minimum codebase to achieve it.
 
 ## Automatic installation
 
@@ -53,16 +53,17 @@ Prefer building it yourself? See [Building from source](#building-from-source).
 
 Flash the installer zip (`microg-ota-product-<x.y.z>.zip`) in a recovery (TWRP/LineageOS recovery). Instructions below with `adb`:
 
-**In case your device supports direct `sideload` reboot:
+**In case your device supports direct `sideload` reboot**:
 1. Reboot to Sideload mode: `adb reboot sideload`.
 2. Pass the zip file to flash: `adb sideload microg-ota-product-<x.y.z>.zip`.
-3. Reboot system normally: `adb reboot`.
 
-**In case your device DOESN'T support direct `sideload` reboot:
+Your device should reboot automatically. In case it doesn't, just reboot to system normally: `adb reboot`.
+
+**In case your device DOESN'T support direct `sideload` reboot**:
 1. Reboot to Recovery mode: `adb reboot recovery`.
 2. Manually select "Apply update from ADB" (or "ADB sideload") to activate Sideload mode.
 3. Pass the zip file to flash: `adb sideload microg-ota-product-<x.y.z>.zip`.
-4. Reboot system normally: `adb reboot`.
+4. Reboot system normally (by manually navigating the recovery mode).
 
 ## What it does
 
