@@ -24,7 +24,7 @@ PKG_DIR="$SCRIPT_DIR/package"
 RELEASES_DIR="$SCRIPT_DIR/releases"
 
 GH_REPO="microg/GmsCore"
-GH_API="https://api.github.com/repos/$GH_REPO/releases/latest"
+GH_API="https://api.github.com/repos/$GH_REPO/releases?per_page=10"
 
 # GsfProxy ships from its own repo/release (a single GsfProxy.apk asset), not
 # from the GmsCore release. Opt-in only; GmsCore provides GSF and upstream
@@ -100,7 +100,7 @@ echo ">> Querying latest release of $GH_REPO ..."
 CURL_AUTH=()
 [ -n "${GITHUB_TOKEN:-}" ] && CURL_AUTH=(-H "Authorization: Bearer $GITHUB_TOKEN")
 
-meta="$(curl -fsSL "${CURL_AUTH[@]}" -H "Accept: application/vnd.github+json" "$GH_API")"
+meta="$(curl -fsSL "${CURL_AUTH[@]}" -H "Accept: application/vnd.github+json" "$GH_API" | jq -r 'sort_by(.updated_at) | last')"
 
 tag="$(printf '%s' "$meta" | jq -r '.tag_name')"
 published="$(printf '%s' "$meta" | jq -r '.published_at')"
