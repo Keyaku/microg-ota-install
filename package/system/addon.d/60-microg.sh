@@ -4,10 +4,15 @@
 # During a system upgrade, this script backs up microG,
 # /system is formatted and reinstalled, then the files are restored.
 #
+# ADDOND_VERSION=3
+#
+# Version 3 is what A/B updates run: LineageOS's backuptool_ab.sh drops any
+# script without it. Paths go through $S, so the same script works in recovery
+# and in an A/B postinstall, where get_output_path maps them to the new slot.
 
 . /tmp/backuptool.functions
 
-PRODUCT=$SYSMOUNT/product
+PRODUCT=$S/product
 
 # One path per line, relative to $PRODUCT. Missing files are skipped by
 # backup_file/restore_file, so listing the optional default-permissions XMLs
@@ -29,7 +34,9 @@ EOF
 # libs for pre-installed apps, so without this the Cronet library goes missing
 # again after every system update and apps like Google Maps crash.
 restore_native_libs() {
-	GMS_APK="$PRODUCT/priv-app/GmsCore/GmsCore.apk"
+	# Where restore_file put it: the new slot's product on an A/B update.
+	GMS_APK=$(get_output_path "$PRODUCT/priv-app/GmsCore/GmsCore.apk")
+	PRODUCT=${GMS_APK%/priv-app/GmsCore/GmsCore.apk}
 	[ -f "$GMS_APK" ] || return 0
 	case "$(getprop ro.product.cpu.abi)" in
 		arm64*)  srcabi=arm64-v8a;   arch=arm64  ;;
