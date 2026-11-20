@@ -203,7 +203,8 @@ fi
 # from the exact APKs being shipped, so the grants stay in lockstep with what
 # the APKs request and how current Android releases classify each permission
 # (see tools/gen-perm-xml.sh). This is a required build step;
-# it needs aapt2/aapt + apksigner/keytool. Use --skip-perm-xml only if you have
+# it needs aapt2/aapt + apksigner/keytool (the latter not with --no-cert-digest),
+# all auto-detected. Use --skip-perm-xml only if you have
 # placed the XMLs under package/product/etc/{permissions,default-permissions}/
 # yourself.
 if [ "$SKIP_PERM_XML" != 1 ]; then

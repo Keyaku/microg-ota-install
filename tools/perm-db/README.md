@@ -1,6 +1,6 @@
 # AOSP permission database (vendored)
 
-`perms/base-permissions-api-<N>.xml` are the `<permission>` declarations extracted from AOSP's `core/res/AndroidManifest.xml` for each supported API level (23→36), produced by ale5000's `dl-perm-list.sh` (downloaded by [`../gen-perm-xml.sh`](../gen-perm-xml.sh); see [`../THIRD_PARTY.md`](../THIRD_PARTY.md)). `gen-perm-xml.sh` cross-references an APK's requested permissions against these to decide which are privileged.
+`perms/base-permissions-api-<N>.xml` are the `<permission>` declarations extracted from AOSP's `core/res/AndroidManifest.xml` for each supported API level (23→37), produced by ale5000's `dl-perm-list.sh` (downloaded by [`../gen-perm-xml.sh`](../gen-perm-xml.sh); see [`../THIRD_PARTY.md`](../THIRD_PARTY.md)). `gen-perm-xml.sh` cross-references an APK's requested permissions against these to decide which are privileged.
 
 ## Why it's committed
 
@@ -11,7 +11,7 @@
 When a new Android API level appears (or to refresh):
 
 ```sh
-tools/gen-perm-xml.sh --refresh <some.apk>                 # re-downloads into the cache
+tools/gen-perm-xml.sh --refresh <some.apk>                 # re-downloads into the cache (needs wget)
 cp -r "${XDG_CACHE_HOME:-$HOME/.cache}/microg-ota-install/perm-db/perms/." tools/perm-db/perms/
 ```
 

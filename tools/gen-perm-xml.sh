@@ -20,7 +20,8 @@
 # fixes are picked up automatically:
 #   - dl-perm-list.sh      builds the AOSP permission database
 #   - generate-perm-xml.sh reads an APK + the DB and emits the XML
-# Those two are GPL-3.0-or-later OR Apache-2.0. See tools/THIRD_PARTY.md.
+# Those two are Apache-2.0 OR GPL-3.0-or-later WITH
+# LicenseRef-Archive-packaging-exception. See tools/THIRD_PARTY.md.
 #
 # Usage:
 #   tools/gen-perm-xml.sh [options] APK [APK...]
@@ -31,16 +32,19 @@
 #     --default-permissions   also emit default-permissions (off by default)
 #     --no-cert-digest        emit the digest-less (package-name-only) allow-list
 #                             (default: embed the signing-cert sha256 digest)
-#     --refresh               force re-download of the upstream tools AND the DB
+#     --refresh               rebuild the permission DB into the cache (ignoring
+#                             the committed tools/perm-db/)
 #
 # Env overrides:
 #   UPSTREAM_REPO   default: micro5k/microg-unofficial-installer
 #   UPSTREAM_REF    default: main   (pin to a tag/commit for reproducible builds)
-#   AAPT_PATH / APKSIGNER_PATH / KEYTOOL_PATH
+#   AAPT_PATH / APKSIGNER_PATH / KEYTOOL_PATH / ANDROID_HOME   (all auto-detected)
+#   MAX_ATTEMPTS / RETRY_DELAY / REQUEST_DELAY   dl-perm-list.sh download tuning
 #
-# Requires: curl + aapt2/aapt (Android SDK build-tools). The upstream generator
-# also needs apksigner or keytool (auto-detected) to run. By default this wrapper
-# uses them too to embed the digest; with --no-cert-digest the digest is stripped.
+# Requires: curl + aapt2/aapt (Android SDK build-tools). apksigner or keytool is
+# also needed to embed the digest (not with --no-cert-digest). wget is needed
+# only to (re)build the permission DB, i.e. with --refresh or when no committed
+# or cached DB is available.
 # Caches live under $MICROG_OTA_CACHE (default ${XDG_CACHE_HOME:-~/.cache}/microg-ota-install/).
 
 set -euo pipefail
@@ -104,17 +108,15 @@ done
 command -v curl >/dev/null 2>&1 || die "missing dependency: curl"
 
 # --- fetch the upstream tools (cached) ------------------------------------
-# Download $2 (upstream repo-relative path) to $TOOLS_CACHE/$1. Falls back to a
-# cached copy if the network is down; fails loudly with guidance if the upstream
-# path 404s (which usually means the file was moved/renamed upstream).
+# Download $2 (upstream repo-relative path) to $TOOLS_CACHE/$1 on every run, so
+# upstream fixes are always picked up. Falls back to a cached copy if the network
+# is down; fails loudly with guidance if the upstream path 404s and nothing is
+# cached (which usually means the file was moved/renamed upstream).
 fetch_tool() {
 	local name="$1" relpath="$2" dest url
 	dest="$TOOLS_CACHE/$name"
 	url="https://raw.githubusercontent.com/$UPSTREAM_REPO/$UPSTREAM_REF/$relpath"
 
-	if [ "$REFRESH" -eq 0 ] && [ -f "$dest" ]; then
-		printf '%s\n' "$dest"; return 0
-	fi
 	mkdir -p "$TOOLS_CACHE"
 	if curl -fsSL -o "$dest.part" "$url"; then
 		mv "$dest.part" "$dest"
@@ -137,110 +139,38 @@ log "Upstream tools: $UPSTREAM_REPO@$UPSTREAM_REF"
 GEN_TOOL="$(fetch_tool generate-perm-xml.sh "$UPSTREAM_GEN_PATH")"
 DL_TOOL="$(fetch_tool dl-perm-list.sh "$UPSTREAM_DL_PATH")"
 
-# --- locate Android build tools -------------------------------------------
-find_build_tool() {
-	# $1 = tool name (aapt2 / aapt)
-	local p roots root
-	if p="$(command -v "$1" 2>/dev/null)"; then printf '%s\n' "$p"; return 0; fi
-	roots=("${ANDROID_SDK_ROOT:-}" "${ANDROID_HOME:-}" \
-		"$HOME/Android/Sdk" "$HOME/.local/share/android/sdk" \
-		"$HOME/Library/Android/sdk" "/usr/lib/android-sdk")
-	for root in "${roots[@]}"; do
-		[ -n "$root" ] && [ -d "$root/build-tools" ] || continue
-		p="$(find "$root/build-tools" -maxdepth 2 -name "$1" 2>/dev/null | sort -V | tail -n1)"
-		[ -n "$p" ] && { printf '%s\n' "$p"; return 0; }
-	done
-	return 1
-}
-
-AAPT_PATH="${AAPT_PATH:-$(find_build_tool aapt2 || find_build_tool aapt || true)}"
-[ -n "$AAPT_PATH" ] || die "aapt2/aapt not found. Install Android SDK build-tools or set AAPT_PATH."
-export AAPT_PATH
-
-# The upstream generator needs apksigner or keytool to compute the digest it
-# embeds. keytool is almost always on PATH; to also let it find apksigner, point
-# ANDROID_SDK_ROOT at the SDK we found aapt in when the caller hasn't set one.
-if [ -z "${ANDROID_SDK_ROOT:-}" ] && [ -z "${ANDROID_HOME:-}" ]; then
-	case "$AAPT_PATH" in
-		*/build-tools/*) export ANDROID_SDK_ROOT="${AAPT_PATH%/build-tools/*}" ;;
-	esac
-fi
-
-log "aapt:     $AAPT_PATH"
-
-# By default we need apksigner or keytool to compute the digest we embed.
-if [ "$WITH_CERT_DIGEST" -eq 1 ]; then
-	if [ -n "${APKSIGNER_PATH:-}" ]; then
-		export APKSIGNER_PATH
-	elif p="$(find_build_tool apksigner 2>/dev/null)"; then
-		export APKSIGNER_PATH="$p"
-	elif p="$(command -v keytool 2>/dev/null)"; then
-		export KEYTOOL_PATH="$p"
-	else
-		die "neither apksigner nor keytool found (needed for --cert-digest)."
-	fi
-	log "cert via: ${APKSIGNER_PATH:-$KEYTOOL_PATH}"
-fi
-
-# Compute an APK's signing-cert SHA-256 digest as upper-case colon-separated hex.
-# Recomputed here rather than trusting the upstream generator's embedded value,
-# because some apksigner builds print an extra-colon line -- "V2 Signer:
-# certificate SHA-256 digest: <hex>" -- that its `cut -d :` mis-splits, leaking
-# the label into the attribute. Taking the hex after the LAST "digest:" is robust.
-cert_digest() {
-	local raw
-	if [ -n "${APKSIGNER_PATH:-}" ]; then
-		raw="$("$APKSIGNER_PATH" verify --print-certs --min-sdk-version 24 -- "$1" 2>/dev/null \
-			| grep -im1 'certificate SHA-256 digest:' | sed -E 's/.*digest:[[:space:]]*//')"
-	else
-		raw="$("$KEYTOOL_PATH" -printcert -jarfile "$1" 2>/dev/null \
-			| grep -im1 'SHA256:' | sed -E 's/.*SHA256:[[:space:]]*//')"
-	fi
-	raw="$(printf '%s' "$raw" | tr -d '[:space:]:' | tr 'a-f' 'A-F')"
-	[ "${#raw}" -eq 64 ] || return 1
-	printf '%s' "$raw" | sed 's/../&:/g; s/:$//'
-}
-
-# The upstream generator always embeds a sha256-cert-digest. Either overwrite it
-# with our robustly-computed value (default) or strip it so the allow-list matches
-# by package name only (--no-cert-digest).
-# $1 = generated XML, $2 = APK.
-normalize_cert_digest() {
-	if [ "$WITH_CERT_DIGEST" -eq 1 ]; then
-		local digest
-		if digest="$(cert_digest "$2")"; then
-			sed -i -E "s/(sha256-cert-digest=\")[^\"]*(\")/\1$digest\2/" "$1"
-		else
-			warn "could not compute cert digest for $(basename "$2"); leaving the generator's value."
-		fi
-	else
-		sed -i -E 's/ sha256-cert-digest="[^"]*"//' "$1"
-	fi
-}
+# --- Android build tools ---------------------------------------------------
+# The upstream generator auto-detects aapt2/aapt and (unless --no-cert-digest)
+# apksigner/keytool on PATH or in the Android SDK (ANDROID_HOME / ANDROID_SDK_ROOT,
+# then the usual per-OS locations). AAPT_PATH / APKSIGNER_PATH / KEYTOOL_PATH are
+# honoured as overrides, simply by being inherited from the environment.
 
 # --- ensure the AOSP permission database ----------------------------------
-# dl-perm-list.sh fetches one manifest per API level from android.googlesource.com
-# and aborts if any single fetch hiccups, leaving a PARTIAL perms/ dir behind. A
-# marker written only on full success guards against reusing an incomplete DB, and
-# we retry to ride out transient network failures (the CI symptom).
-export TOOLS_DATA_DIR="$PERMDB_DIR"
-db_marker="$PERMDB_DIR/perms/.complete"
-if [ "$REFRESH" -eq 1 ] || [ ! -f "$db_marker" ]; then
-	log "Building AOSP permission database (this hits android.googlesource.com)..."
-	mkdir -p "$PERMDB_DIR"
-	rm -f "$db_marker"
-	attempt=1; tries="${PERMDB_TRIES:-3}"
-	until sh "$DL_TOOL"; do
-		[ "$attempt" -lt "$tries" ] || die "dl-perm-list.sh failed after $tries attempts (android.googlesource.com unreachable?)."
-		warn "permission DB download failed (attempt $attempt/$tries); retrying in 5s..."
-		attempt=$((attempt + 1)); sleep 5
-	done
-	touch "$db_marker"
+# Prefer the DB committed at tools/perm-db/ (vendored reference data): it makes
+# builds offline and deterministic and, crucially, avoids android.googlesource.com,
+# which rate-limits/blocks CI runner IPs. Only when it's absent (or on --refresh,
+# to regenerate it) do we download into the cache via dl-perm-list.sh, which
+# retries failed requests itself (MAX_ATTEMPTS / RETRY_DELAY / REQUEST_DELAY) and
+# writes perms/.completed only once every API level was fetched.
+# To update the committed DB: run with --refresh, then copy
+#   "$PERMDB_DIR/perms/" -> tools/perm-db/perms/ .
+REPO_DB="$REPO_ROOT/tools/perm-db"
+if [ "$REFRESH" -eq 0 ] && [ -f "$REPO_DB/perms/.completed" ]; then
+	log "Using committed AOSP permission database: $REPO_DB/perms"
+	export TOOLS_DATA_DIR="$REPO_DB"
 else
-	log "Using cached permission database: $PERMDB_DIR/perms"
+	export TOOLS_DATA_DIR="$PERMDB_DIR"
+	if [ "$REFRESH" -eq 1 ] || [ ! -f "$PERMDB_DIR/perms/.completed" ]; then
+		command -v wget >/dev/null 2>&1 || die "missing dependency: wget (needed by dl-perm-list.sh to build the permission DB)"
+		log "Building AOSP permission database (this hits android.googlesource.com)..."
+		mkdir -p "$PERMDB_DIR"
+		sh "$DL_TOOL" --no-pause || die "dl-perm-list.sh failed (android.googlesource.com unreachable?)."
+	else
+		log "Using cached permission database: $PERMDB_DIR/perms"
+	fi
 fi
 
-# --- generate, strip the cert digest, install under canonical names -------
+# --- generate, install under canonical names ------------------------------
 mkdir -p "$DEST_DIR"
 # Clear previously-generated files first so stale output can't linger and ship
 # -- e.g. default-permissions from an earlier run that no longer enables them.
@@ -250,40 +180,40 @@ rm -f "$DEST_DIR"/privapp-permissions-*.xml
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/microg-perm.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
+APKS_ABS=()
+for apk in "${APKS[@]}"; do
+	[ -f "$apk" ] || die "APK not found: $apk"
+	APKS_ABS+=("$(realpath "$apk")")
+done
+
+gen_args=(--no-pause)
+[ "$WITH_CERT_DIGEST" -eq 1 ] || gen_args+=(--no-cert-digest)
+OUTPUT_DIR="$WORK/output" sh "$GEN_TOOL" "${gen_args[@]}" -- "${APKS_ABS[@]}" \
+	|| die "generate-perm-xml.sh failed."
+
 # Read the package= (or exception package=) attribute from a generated file.
 pkg_of() { grep -o 'package="[^"]*"' "$1" | head -n1 | cut -d'"' -f2; }
 
-for apk in "${APKS[@]}"; do
-	[ -f "$apk" ] || die "APK not found: $apk"
-	apk_abs="$(realpath "$apk")"
-	rm -rf "$WORK/output"; mkdir -p "$WORK/output"
-
-	log "Processing $(basename "$apk_abs") ..."
-	# generate-perm-xml.sh writes to <cwd>/output/, so run it from $WORK.
-	( cd "$WORK" && sh "$GEN_TOOL" "$apk_abs" )
-
-	# privapp-permissions (required for privileged apps).
-	priv="$(find "$WORK/output" -name 'privapp-permissions-*.xml' | head -n1)"
-	if [ -n "$priv" ]; then
-		pkg="$(pkg_of "$priv")"
-		normalize_cert_digest "$priv" "$apk_abs"
-		cp -f "$priv" "$DEST_DIR/privapp-permissions-$pkg.xml"
-		log "  privapp:  $DEST_DIR/privapp-permissions-$pkg.xml"
-	else
-		warn "  no privileged permissions produced for $(basename "$apk_abs")."
-	fi
-
-	# default-permissions (dangerous-perm auto-grants); opt-in only.
-	if [ "$WITH_DEFAULT_PERMS" -eq 1 ]; then
-		def="$(find "$WORK/output" -name 'default-permissions-*.xml' | head -n1)"
-		if [ -n "$def" ]; then
-			pkg="$(pkg_of "$def")"
-			normalize_cert_digest "$def" "$apk_abs"
-			cp -f "$def" "$DEF_DEST_DIR/default-permissions-$pkg.xml"
-			log "  default:  $DEF_DEST_DIR/default-permissions-$pkg.xml"
-		fi
-	fi
+# The generator names its output after the APK file; rename to the package name.
+found=0
+for priv in "$WORK"/output/privapp-permissions-*.xml; do
+	[ -f "$priv" ] || continue
+	pkg="$(pkg_of "$priv")"
+	cp -f "$priv" "$DEST_DIR/privapp-permissions-$pkg.xml"
+	log "  privapp:  $DEST_DIR/privapp-permissions-$pkg.xml"
+	found=1
 done
+[ "$found" -eq 1 ] || warn "no privileged permissions produced."
+
+# default-permissions (dangerous-perm auto-grants); opt-in only.
+if [ "$WITH_DEFAULT_PERMS" -eq 1 ]; then
+	for def in "$WORK"/output/default-permissions-*.xml; do
+		[ -f "$def" ] || continue
+		pkg="$(pkg_of "$def")"
+		cp -f "$def" "$DEF_DEST_DIR/default-permissions-$pkg.xml"
+		log "  default:  $DEF_DEST_DIR/default-permissions-$pkg.xml"
+	done
+fi
 
 # Don't ship an empty default-permissions/ dir as dead weight.
 [ -d "$DEF_DEST_DIR" ] && rmdir "$DEF_DEST_DIR" 2>/dev/null || true

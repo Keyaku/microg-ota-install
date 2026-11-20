@@ -126,9 +126,9 @@ The package version (`x.y.z`) is owned by this repo, **not** microG: it comes fr
 
 The privileged apps need a `privapp-permissions` allow-list on `/product/etc/permissions/` for the *privileged* permissions they request. Without it those grants are denied at runtime, and on ROMs with `ro.control_privapp_permissions=enforce` a missing entry blocks boot outright.
 
-A hand-maintained list rots over time as microG adds/removes a requested permission, or as a new Android release reclassifies one (e.g. `normal` → `privileged`). To avoid that, these XMLs are **not committed**; the build **derives** them from the exact APKs it is about to ship, via [`tools/gen-perm-xml.sh`](tools/gen-perm-xml.sh). It reads each APK's requested permissions (`aapt`/`aapt2`), cross-references them against a database of AOSP permission declarations per Android API level (23→36), and keeps the ones that are privileged.
+A hand-maintained list rots over time as microG adds/removes a requested permission, or as a new Android release reclassifies one (e.g. `normal` → `privileged`). To avoid that, these XMLs are **not committed**; the build **derives** them from the exact APKs it is about to ship, via [`tools/gen-perm-xml.sh`](tools/gen-perm-xml.sh). It reads each APK's requested permissions (`aapt`/`aapt2`), cross-references them against a database of AOSP permission declarations per Android API level (23→37), and keeps the ones that are privileged.
 
-The generation logic itself is **downloaded from upstream at build time** (not vendored) so upstream fixes are picked up automatically; see [Credits & licensing](#credits--licensing) and [`tools/THIRD_PARTY.md`](tools/THIRD_PARTY.md). The upstream tools and the AOSP database are cached under `${XDG_CACHE_HOME:-~/.cache}/microg-ota-install/`.
+The generation logic itself is **downloaded from upstream at build time** (not vendored) so upstream fixes are picked up automatically; see [Credits & licensing](#credits--licensing) and [`tools/THIRD_PARTY.md`](tools/THIRD_PARTY.md). The upstream tools are re-fetched on every run (falling back to the cached copy when offline) and cached under `${XDG_CACHE_HOME:-~/.cache}/microg-ota-install/`. The AOSP permission database is committed under [`tools/perm-db/`](tools/perm-db/README.md), so builds never need to download it.
 
 The allow-list embeds each app's **signing-cert digest** (`sha256-cert-digest`), so the privileged grants bind to microG's signing key rather than the package name alone — the hardened form upstream ships, validated on an `ro.control_privapp_permissions=enforce` device. Pass `--no-cert-digest` for the digest-less (package-name-only) form. The generator can also emit `default-permissions` (auto-grants for dangerous runtime perms), but that's opt-in via `--default-permissions` and off by default.
 
@@ -138,11 +138,11 @@ You can also run it standalone:
 tools/gen-perm-xml.sh path/to/GmsCore.apk path/to/GmsCompanion.apk
 #   --default-permissions     also emit default-permissions (off by default)
 #   --no-cert-digest          emit the digest-less (package-name-only) allow-list
-#   --refresh                 re-download the upstream tools and rebuild the DB
+#   --refresh                 rebuild the permission DB into the cache (needs wget)
 #   UPSTREAM_REF=<tag/commit> pin the upstream tool version (default: main)
 ```
 
-Requirements: `curl` + `aapt2`/`aapt` (Android SDK build-tools). The upstream generator also needs `apksigner` or `keytool` (auto-detected) to compute the signing-cert digest embedded in the allow-list (`--no-cert-digest` strips it).
+Requirements: `curl` + `aapt2`/`aapt` (Android SDK build-tools), plus `apksigner` or `keytool` to compute the signing-cert digest embedded in the allow-list; with `--no-cert-digest` neither is needed. All of these are auto-detected (on `PATH` or in the Android SDK); set `AAPT_PATH`, `APKSIGNER_PATH` or `KEYTOOL_PATH` only to override. `wget` is needed only to rebuild the permission database (`--refresh`), since upstream's `dl-perm-list.sh` uses it.
 
 ### GsfProxy
 
@@ -170,4 +170,4 @@ The tooling and packaging scripts in this repository are licensed under the [MIT
 
 The APKs that this package fetches and installs — **GmsCore** (`com.google.android.gms`) and **GmsCompanion** (`com.android.vending`) — are **not** part of this repository. They are built and published by the [microG project](https://github.com/microg/GmsCore), which is licensed under the [Apache License 2.0](https://github.com/microg/GmsCore/blob/master/LICENSE). All credit for microG itself goes to its authors and contributors; this project only repackages their official releases into a flashable form.
 
-The permission-XML generation tools (`generate-perm-xml.sh`, `dl-perm-list.sh`) that [`tools/gen-perm-xml.sh`](tools/gen-perm-xml.sh) downloads at build time are the work of **ale5000** ([@ale5000-git](https://github.com/ale5000-git)) from the [`microg-unofficial-installer`](https://github.com/micro5k/microg-unofficial-installer) project, used under their own terms (`GPL-3.0-or-later OR Apache-2.0`) and **not** this repository's MIT license. See [`tools/THIRD_PARTY.md`](tools/THIRD_PARTY.md) for full provenance. All credit for that approach and code goes to ale5000.
+The permission-XML generation tools (`generate-perm-xml.sh`, `dl-perm-list.sh`) that [`tools/gen-perm-xml.sh`](tools/gen-perm-xml.sh) downloads at build time are the work of **ale5000** ([@ale5000-git](https://github.com/ale5000-git)) from the [`microg-unofficial-installer`](https://github.com/micro5k/microg-unofficial-installer) project, used under their own terms (`Apache-2.0 OR GPL-3.0-or-later WITH LicenseRef-Archive-packaging-exception`) and **not** this repository's MIT license. See [`tools/THIRD_PARTY.md`](tools/THIRD_PARTY.md) for full provenance. All credit for that approach and code goes to ale5000.

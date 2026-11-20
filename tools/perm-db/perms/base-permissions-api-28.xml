@@ -1,3 +1,7 @@
+<!--
+ SPDX-FileCopyrightText: 2006 The Android Open Source Project
+ SPDX-License-Identifier: Apache-2.0
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
  <permission-group android:name="android.permission-group.CONTACTS" android:icon="@drawable/perm_group_contacts" android:label="@string/permgrouplab_contacts" android:description="@string/permgroupdesc_contacts" android:request="@string/permgrouprequest_contacts" android:priority="100" />
  <permission android:name="android.permission.READ_CONTACTS" android:permissionGroup="android.permission-group.CONTACTS" android:label="@string/permlab_readContacts" android:description="@string/permdesc_readContacts" android:protectionLevel="dangerous" />

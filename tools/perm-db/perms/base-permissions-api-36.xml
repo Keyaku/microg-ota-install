@@ -1,3 +1,7 @@
+<!--
+ SPDX-FileCopyrightText: 2006 The Android Open Source Project
+ SPDX-License-Identifier: Apache-2.0
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
  <permission-group android:name="android.permission-group.UNDEFINED" android:priority="100" />
  <permission-group android:name="android.permission-group.CONTACTS" android:icon="@drawable/perm_group_contacts" android:label="@string/permgrouplab_contacts" android:description="@string/permgroupdesc_contacts" android:priority="100" />
@@ -1095,6 +1099,6 @@
  <permission android:name="android.permission.REQUEST_TASK_HANDOFF" android:protectionLevel="signature|privileged|recents" android:featureFlag="android.companion.enable_task_continuity" />
  <permission android:name="android.permission.COLLECT_TV_WATCHDOG_METRICS" android:protectionLevel="signature|privileged" android:featureFlag="android.media.tv.flags.enable_tv_watchdog_emmc_protection" />
  <permission android:name="android.permission.CONTROL_TV_WATCHDOG_CONFIG" android:protectionLevel="signature|privileged" android:featureFlag="android.media.tv.flags.enable_tv_watchdog_emmc_protection" />
- <permission android:name="android.permission.QUERY_AUDIO_VOLUME" android:protectionLevel="normal" android:featureFlag="android.media.audio.guard_stream_volume_apis" android:requiresPurpose="true" android:requiresPurposeTargetSdkVersion="37">
+ <permission android:name="android.permission.QUERY_AUDIO_VOLUME" android:protectionLevel="normal" android:featureFlag="android.media.audio.guard_stream_volume_apis" android:requiresPurpose="true" android:requiresPurposeTargetSdkVersion="37" />
  <permission android:name="android.permission.BIND_CONTENT_RESTRICTION_SERVICE" android:protectionLevel="signature" android:featureFlag="android.permission.flags.content_restriction_role_enabled" />
 </manifest>
